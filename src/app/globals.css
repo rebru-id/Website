@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Fonts ───────────────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500&family=Space+Mono:wght@400;700&display=swap");
+
+/* ── CSS Custom Properties ───────────────────────────────────────────────────── */
+:root {
+  --font-cormorant: "Cormorant Garamond", Georgia, serif;
+  --font-dm-sans:   "DM Sans", sans-serif;
+  --font-space-mono:"Space Mono", monospace;
+}
+
+/* ── Base reset ──────────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-coffee-deep text-ink font-body overflow-x-hidden;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  /* Grain texture overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.35;
+  }
+
+  a {
+    @apply no-underline text-inherit;
+  }
+}
+
+/* ── Reusable component classes ──────────────────────────────────────────────── */
+@layer components {
+
+  /* Section label — mono uppercase small */
+  .section-label {
+    @apply font-mono text-[0.7rem] tracking-[0.25em] uppercase text-forest-sage block;
+  }
+
+  /* Section title — display font */
+  .section-title {
+    @apply font-display text-coffee-foam font-semibold leading-tight;
+    font-size: clamp(2rem, 4vw, 3.2rem);
+  }
+
+  /* Horizontal divider line */
+  .divider-line {
+    @apply w-full h-px;
+    background: linear-gradient(90deg, transparent, theme(colors.coffee.latte), transparent);
+  }
+
+  /* Card base */
+  .card-base {
+    @apply bg-white/[0.025] border border-white/[0.06] rounded-lg transition-all duration-300;
+  }
+
+  .card-base:hover {
+    @apply bg-white/[0.04] border-coffee-latte/15;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center gap-2.5 px-9 py-4
+           bg-gradient-to-br from-coffee-warm to-coffee-mid
+           text-coffee-foam text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill border border-coffee-latte/30
+           transition-all duration-300 cursor-pointer;
+  }
+
+  .btn-primary:hover {
+    @apply -translate-y-0.5 shadow-[0_8px_32px_rgba(74,44,26,0.5)] border-coffee-latte;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2.5 px-9 py-4
+           text-ink-dim text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill border border-white/10
+           transition-all duration-300 cursor-pointer;
+  }
+
+  .btn-ghost:hover {
+    @apply text-ink border-white/25 bg-white/[0.04];
+  }
+
+  .btn-green {
+    @apply inline-flex items-center gap-2.5 px-9 py-4
+           bg-gradient-to-br from-forest-moss to-forest-dark
+           text-forest-mist text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill border border-forest-sage/30
+           transition-all duration-300 cursor-pointer;
+  }
+
+  .btn-green:hover {
+    @apply -translate-y-0.5 shadow-[0_8px_28px_rgba(45,90,46,0.4)]
+           from-forest-leaf to-forest-moss;
+  }
+
+  /* Dashboard stat card */
+  .dash-stat-card {
+    @apply card-base rounded-md p-7;
+  }
+
+  /* Dashboard table */
+  .dash-table {
+    @apply w-full border-collapse;
+  }
+
+  .dash-table th {
+    @apply px-5 py-3.5 text-left font-mono text-[0.65rem] tracking-[0.15em]
+           uppercase text-ink-ghost bg-white/[0.02] border-b border-white/[0.05];
+  }
+
+  .dash-table td {
+    @apply px-5 py-3.5 text-[0.88rem] text-ink-dim border-b border-white/[0.03];
+  }
+
+  .dash-table tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .dash-table tr:hover td {
+    @apply bg-white/[0.02];
+  }
+
+  /* Status pills */
+  .status-pill {
+    @apply inline-block px-2.5 py-0.5 rounded-pill text-[0.68rem] tracking-[0.08em];
+  }
+
+  .status-pending  { @apply bg-gold/15 text-gold; }
+  .status-approved { @apply bg-forest-moss/25 text-forest-sage; }
+  .status-rejected { @apply bg-red-900/25 text-red-400; }
+  .status-verified { @apply bg-forest-moss/25 text-forest-sage; }
+}
+
+/* ── Animation utilities ─────────────────────────────────────────────────────── */
+@layer utilities {
+  .animation-delay-300  { animation-delay: 300ms; }
+  .animation-delay-500  { animation-delay: 500ms; }
+  .animation-delay-700  { animation-delay: 700ms; }
+  .animation-delay-900  { animation-delay: 900ms; }
+  .animation-delay-1100 { animation-delay: 1100ms; }
+
+  .animation-fill-forwards { animation-fill-mode: forwards; }
+
+  .opacity-0-start { opacity: 0; }
+}
