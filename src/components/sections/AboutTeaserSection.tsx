@@ -17,7 +17,8 @@ export default function AboutTeaserSection() {
           className="font-display font-semibold text-coffee-foam leading-[1.1] mb-7"
           style={{ fontSize: "clamp(2.4rem, 4.5vw, 4rem)" }}
         >
-          From Residue<br />
+          From Residue
+          <br />
           to <em className="italic text-forest-sage">Ritual</em>
         </h2>
 
@@ -35,9 +36,9 @@ export default function AboutTeaserSection() {
         {/* Mini stats */}
         <div className="flex gap-8 pt-8 mt-2 border-t border-white/6">
           {[
-            { value: "2024", label: "Founded"  },
-            { value: "4+",   label: "Products" },
-            { value: "100%", label: "Organic"  },
+            { value: "2024", label: "Founded" },
+            { value: "4+", label: "Products" },
+            { value: "100%", label: "Organic" },
           ].map(({ value, label }) => (
             <div key={label}>
               <strong className="block font-display text-[2rem] font-bold text-coffee-latte">
@@ -55,25 +56,32 @@ export default function AboutTeaserSection() {
       <div className="relative">
         <div
           className="rounded-lg overflow-hidden relative"
-          style={{ aspectRatio: "4/5", background: "linear-gradient(135deg, #4a2c1a 0%, #1a3a1b 100%)" }}
+          style={{
+            aspectRatio: "4/5",
+            background: "linear-gradient(135deg, #4a2c1a 0%, #1a3a1b 100%)",
+          }}
         >
           <Image
             src="/assets/img/intro-image.png"
             alt="Rebru Process"
             fill
             className="object-cover opacity-80 mix-blend-luminosity"
-            onError={() => {}}
           />
           {/* Gradient overlay */}
           <div
             className="absolute inset-0"
-            style={{ background: "linear-gradient(to bottom, transparent 40%, rgba(26,15,10,0.7))" }}
+            style={{
+              background:
+                "linear-gradient(to bottom, transparent 40%, rgba(26,15,10,0.7))",
+            }}
           />
         </div>
 
         {/* Badge */}
         <div className="absolute -bottom-5 -left-5 bg-forest-dark border border-forest-sage/20 rounded-md px-6 py-5 z-10">
-          <strong className="block font-display text-[1.6rem] text-forest-sage">SCG</strong>
+          <strong className="block font-display text-[1.6rem] text-forest-sage">
+            SCG
+          </strong>
           <span className="text-[0.72rem] text-ink-ghost tracking-[0.1em] uppercase">
             Spent Coffee Grounds
           </span>

@@ -6,7 +6,7 @@ export default function HeroSection() {
   return (
     <section
       id="hero"
-      className="relative min-h-screen flex flex-col justify-end overflow-hidden px-12 pb-20"
+      className="relative min-h-screen flex flex-col justify-end pt-40 px-12 pb-20"
     >
       {/* Background */}
       <div
@@ -25,7 +25,8 @@ export default function HeroSection() {
         className="absolute top-[12%] right-[8%] w-[420px] h-[420px] rounded-full animate-ring-float pointer-events-none"
         style={{
           border: "1px solid rgba(196, 149, 106, 0.12)",
-          boxShadow: "inset 0 0 80px rgba(196,149,106,0.06), 0 0 120px rgba(45,90,46,0.1)",
+          boxShadow:
+            "inset 0 0 80px rgba(196,149,106,0.06), 0 0 120px rgba(45,90,46,0.1)",
         }}
       >
         <div
@@ -56,8 +57,10 @@ export default function HeroSection() {
                      opacity-0 animate-fade-up animation-fill-forwards animation-delay-500"
           style={{ fontSize: "clamp(3.2rem, 7vw, 6.5rem)" }}
         >
-          Brewing<br />
-          <em className="italic text-coffee-latte">Scalable</em> Impact<br />
+          Brewing
+          <br />
+          <em className="italic text-coffee-latte">Scalable</em> Impact
+          <br />
           <span className="text-forest-sage">From Coffee Waste</span>
         </h1>
 
@@ -65,8 +68,9 @@ export default function HeroSection() {
           className="text-[1rem] text-ink-dim max-w-[480px] leading-[1.8] mb-11
                      opacity-0 animate-fade-up animation-fill-forwards animation-delay-700"
         >
-          We transform spent coffee grounds into biochar, compost, and sustainable
-          materials — driving circular economy solutions across Indonesia.
+          We transform spent coffee grounds into biochar, compost, and
+          sustainable materials — driving circular economy solutions across
+          Indonesia.
         </p>
 
         <div
@@ -86,7 +90,9 @@ export default function HeroSection() {
       <div className="absolute bottom-8 right-12 flex flex-col items-center gap-2 opacity-40 pointer-events-none">
         <div
           className="w-px h-16 animate-scroll-pulse"
-          style={{ background: "linear-gradient(to bottom, #c4956a, transparent)" }}
+          style={{
+            background: "linear-gradient(to bottom, #c4956a, transparent)",
+          }}
         />
         <span
           className="font-mono text-[0.6rem] tracking-[0.15em] uppercase text-ink-dim"
@@ -103,16 +109,96 @@ export default function HeroSection() {
 function Particles() {
   // Pre-generated so it's consistent (no random on each render / hydration)
   const particles = [
-    { left: "8%",  bottom: "15%", dur: 14, delay: 0,   drift: 35,  size: 3,   green: false },
-    { left: "15%", bottom: "22%", dur: 11, delay: 2,   drift: -28, size: 2,   green: true  },
-    { left: "23%", bottom: "8%",  dur: 13, delay: 4,   drift: 42,  size: 4,   green: false },
-    { left: "31%", bottom: "30%", dur: 16, delay: 1,   drift: -15, size: 2.5, green: true  },
-    { left: "42%", bottom: "5%",  dur: 10, delay: 3,   drift: 30,  size: 3,   green: false },
-    { left: "55%", bottom: "18%", dur: 15, delay: 5,   drift: -38, size: 2,   green: true  },
-    { left: "63%", bottom: "25%", dur: 12, delay: 0.5, drift: 22,  size: 3.5, green: false },
-    { left: "72%", bottom: "10%", dur: 17, delay: 2.5, drift: -20, size: 2,   green: true  },
-    { left: "80%", bottom: "35%", dur: 11, delay: 4.5, drift: 40,  size: 3,   green: false },
-    { left: "88%", bottom: "12%", dur: 14, delay: 1.5, drift: -32, size: 2.5, green: true  },
+    {
+      left: "8%",
+      bottom: "15%",
+      dur: 14,
+      delay: 0,
+      drift: 35,
+      size: 3,
+      green: false,
+    },
+    {
+      left: "15%",
+      bottom: "22%",
+      dur: 11,
+      delay: 2,
+      drift: -28,
+      size: 2,
+      green: true,
+    },
+    {
+      left: "23%",
+      bottom: "8%",
+      dur: 13,
+      delay: 4,
+      drift: 42,
+      size: 4,
+      green: false,
+    },
+    {
+      left: "31%",
+      bottom: "30%",
+      dur: 16,
+      delay: 1,
+      drift: -15,
+      size: 2.5,
+      green: true,
+    },
+    {
+      left: "42%",
+      bottom: "5%",
+      dur: 10,
+      delay: 3,
+      drift: 30,
+      size: 3,
+      green: false,
+    },
+    {
+      left: "55%",
+      bottom: "18%",
+      dur: 15,
+      delay: 5,
+      drift: -38,
+      size: 2,
+      green: true,
+    },
+    {
+      left: "63%",
+      bottom: "25%",
+      dur: 12,
+      delay: 0.5,
+      drift: 22,
+      size: 3.5,
+      green: false,
+    },
+    {
+      left: "72%",
+      bottom: "10%",
+      dur: 17,
+      delay: 2.5,
+      drift: -20,
+      size: 2,
+      green: true,
+    },
+    {
+      left: "80%",
+      bottom: "35%",
+      dur: 11,
+      delay: 4.5,
+      drift: 40,
+      size: 3,
+      green: false,
+    },
+    {
+      left: "88%",
+      bottom: "12%",
+      dur: 14,
+      delay: 1.5,
+      drift: -32,
+      size: 2.5,
+      green: true,
+    },
   ];
 
   return (
@@ -121,16 +207,18 @@ function Particles() {
         <div
           key={i}
           className="absolute rounded-full opacity-0 animate-particle animation-fill-forwards"
-          style={{
-            left: p.left,
-            bottom: p.bottom,
-            width:  p.size,
-            height: p.size,
-            background: p.green ? "#7aab7e" : "#c4956a",
-            animationDuration: `${p.dur}s`,
-            animationDelay:    `${p.delay}s`,
-            "--drift": `${p.drift}px`,
-          } as React.CSSProperties}
+          style={
+            {
+              left: p.left,
+              bottom: p.bottom,
+              width: p.size,
+              height: p.size,
+              background: p.green ? "#7aab7e" : "#c4956a",
+              animationDuration: `${p.dur}s`,
+              animationDelay: `${p.delay}s`,
+              "--drift": `${p.drift}px`,
+            } as React.CSSProperties
+          }
         />
       ))}
     </div>
