@@ -2,14 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Google Fonts ───────────────────────────────────────────────────────────── */
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500&family=Space+Mono:wght@400;700&display=swap");
-
 /* ── CSS Custom Properties ───────────────────────────────────────────────────── */
 :root {
   --font-cormorant: "Cormorant Garamond", Georgia, serif;
-  --font-dm-sans:   "DM Sans", sans-serif;
-  --font-space-mono:"Space Mono", monospace;
+  --font-dm-sans: "DM Sans", sans-serif;
+  --font-space-mono: "Space Mono", monospace;
 }
 
 /* ── Base reset ──────────────────────────────────────────────────────────────── */
@@ -46,7 +43,6 @@
 
 /* ── Reusable component classes ──────────────────────────────────────────────── */
 @layer components {
-
   /* Section label — mono uppercase small */
   .section-label {
     @apply font-mono text-[0.7rem] tracking-[0.25em] uppercase text-forest-sage block;
@@ -61,7 +57,12 @@
   /* Horizontal divider line */
   .divider-line {
     @apply w-full h-px;
-    background: linear-gradient(90deg, transparent, theme(colors.coffee.latte), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      theme(colors.coffee.latte),
+      transparent
+    );
   }
 
   /* Card base */
@@ -142,21 +143,43 @@
     @apply inline-block px-2.5 py-0.5 rounded-pill text-[0.68rem] tracking-[0.08em];
   }
 
-  .status-pending  { @apply bg-gold/15 text-gold; }
-  .status-approved { @apply bg-forest-moss/25 text-forest-sage; }
-  .status-rejected { @apply bg-red-900/25 text-red-400; }
-  .status-verified { @apply bg-forest-moss/25 text-forest-sage; }
+  .status-pending {
+    @apply bg-gold/15 text-gold;
+  }
+  .status-approved {
+    @apply bg-forest-moss/25 text-forest-sage;
+  }
+  .status-rejected {
+    @apply bg-red-900/25 text-red-400;
+  }
+  .status-verified {
+    @apply bg-forest-moss/25 text-forest-sage;
+  }
 }
 
 /* ── Animation utilities ─────────────────────────────────────────────────────── */
 @layer utilities {
-  .animation-delay-300  { animation-delay: 300ms; }
-  .animation-delay-500  { animation-delay: 500ms; }
-  .animation-delay-700  { animation-delay: 700ms; }
-  .animation-delay-900  { animation-delay: 900ms; }
-  .animation-delay-1100 { animation-delay: 1100ms; }
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+  .animation-delay-500 {
+    animation-delay: 500ms;
+  }
+  .animation-delay-700 {
+    animation-delay: 700ms;
+  }
+  .animation-delay-900 {
+    animation-delay: 900ms;
+  }
+  .animation-delay-1100 {
+    animation-delay: 1100ms;
+  }
 
-  .animation-fill-forwards { animation-fill-mode: forwards; }
+  .animation-fill-forwards {
+    animation-fill-mode: forwards;
+  }
 
-  .opacity-0-start { opacity: 0; }
+  .opacity-0-start {
+    opacity: 0;
+  }
 }
