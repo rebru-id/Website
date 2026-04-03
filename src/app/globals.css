@@ -136,6 +136,10 @@
   /* ── Navbar ── */
   --nav-scrolled-bg: rgba(26, 15, 10, 0.92);
   --nav-scrolled-border: var(--border-default);
+
+  /* ── ICON ── */
+  --icon-sun: #f4d38a; /* kuning senja */
+  --icon-moon: #8b5e3c; /* coklat soft */
 }
 
 /* ── LIGHT MODE ───────────────────────────────────────────────────────────────
@@ -265,6 +269,10 @@
   /* ── Navbar ── */
   --nav-scrolled-bg: rgba(245, 239, 230, 0.94);
   --nav-scrolled-border: var(--border-default);
+
+  /* ── ICON ── */
+  --icon-sun: #e6b85c; /* sedikit lebih gelap biar kontras */
+  --icon-moon: #6b4a2f; /* lebih dalam biar kebaca di light bg */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -467,6 +475,14 @@
     width: 13px;
     height: 13px;
     stroke-width: 1.8;
+  }
+
+  .theme-toggle.sun {
+    color: var(--icon-sun);
+  }
+
+  .theme-toggle.moon {
+    color: var(--icon-moon);
   }
 }
 
