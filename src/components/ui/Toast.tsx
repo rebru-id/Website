@@ -9,10 +9,6 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Context
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface ToastContextValue {
   showToast: (msg: string, duration?: number) => void;
 }
@@ -32,18 +28,25 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      {/* Toast UI */}
       <div
         className={cn(
-          "fixed bottom-8 right-8 z-[200] flex items-center gap-2.5 px-5 py-3.5",
-          "bg-forest-dark border border-forest-sage/30 rounded-md text-[0.85rem] text-forest-mist",
-          "transition-all duration-300",
+          "fixed bottom-8 right-8 z-60 flex items-center gap-2.5 px-5 py-3.5",
+          "rounded-md text-[0.85rem] transition-all duration-300",
+          "border",
           visible
             ? "opacity-100 translate-y-0"
-            : "opacity-0 translate-y-2.5 pointer-events-none"
+            : "opacity-0 translate-y-2.5 pointer-events-none",
         )}
+        style={{
+          background: "var(--forest-dark)",
+          borderColor: "rgba(74,124,78,0.3)",
+          color: "var(--forest-mist)",
+        }}
       >
-        <i className="fas fa-check-circle text-forest-sage" />
+        <i
+          className="fas fa-check-circle"
+          style={{ color: "var(--forest-sage)" }}
+        />
         {message}
       </div>
     </ToastContext.Provider>

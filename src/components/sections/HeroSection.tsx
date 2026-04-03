@@ -1,20 +1,20 @@
 "use client";
 
-import Link from "next/link";
+import Button from "@/components/ui/Button.tsx";
 
 export default function HeroSection() {
   return (
     <section
       id="hero"
-      className="relative min-h-screen flex flex-col justify-end pt-40 px-12 pb-20"
+      className="relative min-h-screen flex flex-col justify-end pt-40 px-12 pb-20 overflow-hidden"
     >
-      {/* Background — pakai CSS variable, otomatis ganti saat mode berubah */}
+      {/* Background */}
       <div
         className="absolute inset-0 transition-all duration-500"
         style={{ background: "var(--hero-gradient)" }}
       />
 
-      {/* Decorative ring — warna dari CSS variable */}
+      {/* Decorative ring */}
       <div
         className="absolute top-[12%] right-[8%] w-[420px] h-[420px] rounded-full animate-ring-float pointer-events-none"
         style={{
@@ -32,61 +32,39 @@ export default function HeroSection() {
         />
       </div>
 
-      {/* Particles */}
       <Particles />
 
       {/* Content */}
       <div className="relative z-10 max-w-[780px]">
-        <p
-          className="inline-flex items-center gap-2.5 font-mono text-[0.72rem] tracking-[0.2em] uppercase mb-7
-                     opacity-0 animate-fade-up animation-fill-forwards animation-delay-300"
-          style={{ color: "var(--forest-sage)" }}
-        >
-          <span
-            className="block w-8 h-px"
-            style={{ background: "var(--forest-sage)" }}
-          />
+        <p className="inline-flex items-center gap-2.5 font-mono text-[0.72rem] tracking-[0.2em] uppercase text-forest-sage mb-7 opacity-0 animate-fade-up animation-fill-forwards animation-delay-300">
+          <span className="block w-8 h-px bg-forest-sage" />
           Makassar · South Sulawesi · Indonesia
         </p>
 
         <h1
-          className="font-display font-semibold leading-[1.0] mb-7
-                     opacity-0 animate-fade-up animation-fill-forwards animation-delay-500"
-          style={{
-            fontSize: "clamp(3.2rem, 7vw, 6.5rem)",
-            color: "var(--text-primary)",
-          }}
+          className="font-display font-semibold text-text-primary leading-[1.0] mb-7 opacity-0 animate-fade-up animation-fill-forwards animation-delay-500"
+          style={{ fontSize: "clamp(3.2rem, 7vw, 6.5rem)" }}
         >
           Brewing
           <br />
-          <em className="italic" style={{ color: "var(--coffee-latte)" }}>
-            Scalable
-          </em>{" "}
-          Impact
+          <em className="italic text-coffee-latte">Scalable</em> Impact
           <br />
-          <span style={{ color: "var(--forest-sage)" }}>From Coffee Waste</span>
+          <span className="text-forest-sage">From Coffee Waste</span>
         </h1>
 
-        <p
-          className="text-[1rem] max-w-[480px] leading-[1.8] mb-11
-                     opacity-0 animate-fade-up animation-fill-forwards animation-delay-700"
-          style={{ color: "var(--text-secondary)" }}
-        >
+        <p className="text-[1rem] text-text-secondary max-w-[480px] leading-[1.8] mb-11 opacity-0 animate-fade-up animation-fill-forwards animation-delay-700">
           We transform spent coffee grounds into biochar, compost, and
           sustainable materials — driving circular economy solutions across
           Indonesia.
         </p>
 
-        <div
-          className="flex gap-4 flex-wrap
-                     opacity-0 animate-fade-up animation-fill-forwards animation-delay-900"
-        >
-          <Link href="/products" className="btn-primary">
+        <div className="flex gap-4 flex-wrap opacity-0 animate-fade-up animation-fill-forwards animation-delay-900">
+          <Button href="/products" variant="primary">
             <i className="fas fa-leaf" /> Explore Products
-          </Link>
-          <Link href="/about" className="btn-ghost">
+          </Button>
+          <Button href="/about" variant="ghost">
             <i className="fas fa-arrow-right" /> Our Story
-          </Link>
+          </Button>
         </div>
       </div>
 
@@ -97,11 +75,8 @@ export default function HeroSection() {
           style={{ background: "var(--scroll-line)" }}
         />
         <span
-          className="font-mono text-[0.6rem] tracking-[0.15em] uppercase"
-          style={{
-            writingMode: "vertical-rl",
-            color: "var(--text-secondary)",
-          }}
+          className="font-mono text-[0.6rem] tracking-[0.15em] uppercase text-text-secondary"
+          style={{ writingMode: "vertical-rl" }}
         >
           Scroll
         </span>
@@ -110,7 +85,6 @@ export default function HeroSection() {
   );
 }
 
-// ── Particles ─────────────────────────────────────────────────────────────────
 function Particles() {
   const particles = [
     {
@@ -217,7 +191,8 @@ function Particles() {
               bottom: p.bottom,
               width: p.size,
               height: p.size,
-              // Particles ikut CSS variable warna accent
+              // GPU hint — promote ke composite layer
+              willChange: "transform",
               background: p.green
                 ? "var(--forest-sage)"
                 : "var(--coffee-latte)",

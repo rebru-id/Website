@@ -1,14 +1,6 @@
 import Link from "next/link";
 
-interface BlogPost {
-  href: string;
-  tag: string;
-  title: string;
-  excerpt?: string;
-  featured: boolean;
-}
-
-const POSTS: BlogPost[] = [
+const POSTS = [
   {
     href: "/blog",
     tag: "Featured · Coffee Waste",
@@ -22,19 +14,21 @@ const POSTS: BlogPost[] = [
     href: "#",
     tag: "Tips · Sustainability",
     title: "5 Tips Mengelola Limbah Kopi di Rumah",
+    excerpt: null,
     featured: false,
   },
   {
     href: "#",
     tag: "Education · Circular Economy",
     title: "Apa Itu Ekonomi Sirkular?",
+    excerpt: null,
     featured: false,
   },
-];
+] as const;
 
 export default function BlogTeaserSection() {
-  const featured = POSTS.find((p) => p.featured)!;
-  const secondaries = POSTS.filter((p) => !p.featured);
+  const featured = POSTS[0];
+  const secondaries = POSTS.slice(1);
 
   return (
     <section id="blog-teaser" className="max-w-[1280px] mx-auto px-12 py-24">
@@ -42,7 +36,7 @@ export default function BlogTeaserSection() {
       <h2 className="section-title mb-12">From Our Blog</h2>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-7">
-        {/* Featured card — pakai CSS variable */}
+        {/* Featured */}
         <Link
           href={featured.href}
           className="group rounded-lg overflow-hidden p-12 flex flex-col justify-end min-h-[380px] relative transition-transform duration-300 hover:-translate-y-1"
@@ -51,7 +45,6 @@ export default function BlogTeaserSection() {
             border: "1px solid var(--blog-card-border)",
           }}
         >
-          {/* Decorative quote */}
           <span
             className="absolute top-6 left-9 font-display text-[6rem] leading-none pointer-events-none select-none"
             style={{ color: "var(--blog-card-quote)" }}
@@ -59,7 +52,6 @@ export default function BlogTeaserSection() {
           >
             &ldquo;
           </span>
-
           <div className="relative z-10">
             <span
               className="font-mono text-[0.68rem] tracking-[0.18em] uppercase block mb-3.5"
@@ -90,13 +82,13 @@ export default function BlogTeaserSection() {
           </div>
         </Link>
 
-        {/* Secondary cards */}
+        {/* Secondary */}
         <div className="flex flex-col gap-4">
           {secondaries.map((post) => (
             <Link
               key={post.title}
               href={post.href}
-              className="flex-1 p-7 rounded-md transition-all duration-300"
+              className="flex-1 p-7 rounded-md transition-all duration-300 hover:-translate-y-0.5"
               style={{
                 background: "var(--blog-small-bg)",
                 border: "1px solid var(--blog-small-border)",
@@ -114,12 +106,7 @@ export default function BlogTeaserSection() {
               >
                 {post.title}
               </h3>
-              <p
-                className="text-[0.82rem]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Coming soon
-              </p>
+              <p className="text-[0.82rem] text-text-muted">Coming soon</p>
             </Link>
           ))}
         </div>

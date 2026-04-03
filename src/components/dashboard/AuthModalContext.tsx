@@ -9,16 +9,12 @@ import {
 } from "react";
 import { type UserRole } from "@/types";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface AuthModalContextValue {
-  isOpen:      boolean;
-  openModal:   () => void;
-  closeModal:  () => void;
-  session:     SessionState | null;
-  setSession:  (s: SessionState | null) => void;
+  isOpen: boolean;
+  openModal: () => void;
+  closeModal: () => void;
+  session: SessionState | null;
+  setSession: (s: SessionState | null) => void;
 }
 
 export interface SessionState {
@@ -27,17 +23,13 @@ export interface SessionState {
   email: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Context
-// ─────────────────────────────────────────────────────────────────────────────
-
 const AuthModalContext = createContext<AuthModalContextValue | null>(null);
 
 export function AuthModalProvider({ children }: { children: ReactNode }) {
-  const [isOpen,  setIsOpen]  = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [session, setSession] = useState<SessionState | null>(null);
 
-  const openModal  = useCallback(() => setIsOpen(true),  []);
+  const openModal = useCallback(() => setIsOpen(true), []);
   const closeModal = useCallback(() => setIsOpen(false), []);
 
   return (
@@ -51,6 +43,7 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
 
 export function useAuthModal() {
   const ctx = useContext(AuthModalContext);
-  if (!ctx) throw new Error("useAuthModal must be used within AuthModalProvider");
+  if (!ctx)
+    throw new Error("useAuthModal must be used within AuthModalProvider");
   return ctx;
 }

@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Image from "next/image";
+import Button from "@/components/ui/Button.tsx";
 
 export default function AboutTeaserSection() {
   return (
@@ -9,63 +9,37 @@ export default function AboutTeaserSection() {
     >
       {/* Text */}
       <div className="flex flex-col">
-        <span
-          className="font-mono text-[0.7rem] tracking-[0.25em] uppercase mb-5"
-          style={{ color: "var(--coffee-latte)" }}
-        >
+        <span className="font-mono text-[0.7rem] tracking-[0.25em] uppercase text-coffee-latte mb-5">
           // Who we are
         </span>
-
         <h2
-          className="font-display font-semibold leading-[1.1] mb-7"
-          style={{
-            fontSize: "clamp(2.4rem, 4.5vw, 4rem)",
-            color: "var(--text-primary)",
-          }}
+          className="font-display font-semibold text-text-primary leading-[1.1] mb-7"
+          style={{ fontSize: "clamp(2.4rem, 4.5vw, 4rem)" }}
         >
           From Residue
           <br />
-          to{" "}
-          <em className="italic" style={{ color: "var(--forest-sage)" }}>
-            Ritual
-          </em>
+          to <em className="italic text-forest-sage">Ritual</em>
         </h2>
-
-        <p
-          className="text-[1rem] leading-[1.9] mb-9"
-          style={{ color: "var(--text-secondary)" }}
-        >
+        <p className="text-[1rem] text-text-secondary leading-[1.9] mb-9">
           Rebru is one of South Sulawesi&apos;s first startups dedicated to
           transforming spent coffee grounds into high-impact climate products.
           We collect, process, and upgrade waste into biochar, compost, and
           bio-briquettes that restore soil and reduce emissions.
         </p>
-
-        <Link href="/about" className="btn-primary self-start">
+        <Button href="/about" variant="primary" className="self-start">
           Read Our Story <i className="fas fa-arrow-right ml-1" />
-        </Link>
-
-        {/* Mini stats */}
-        <div
-          className="flex gap-8 pt-8 mt-2"
-          style={{ borderTop: "1px solid var(--border-subtle)" }}
-        >
+        </Button>
+        <div className="flex gap-8 pt-8 mt-2 border-t border-border-subtle">
           {[
             { value: "2024", label: "Founded" },
             { value: "4+", label: "Products" },
             { value: "100%", label: "Organic" },
           ].map(({ value, label }) => (
             <div key={label}>
-              <strong
-                className="block font-display text-[2rem] font-bold"
-                style={{ color: "var(--coffee-latte)" }}
-              >
+              <strong className="block font-display text-[2rem] font-bold text-coffee-latte">
                 {value}
               </strong>
-              <span
-                className="text-[0.75rem] tracking-[0.08em] uppercase"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <span className="text-[0.75rem] tracking-[0.08em] uppercase text-text-muted">
                 {label}
               </span>
             </div>
@@ -77,10 +51,7 @@ export default function AboutTeaserSection() {
       <div className="relative">
         <div
           className="rounded-lg overflow-hidden relative"
-          style={{
-            aspectRatio: "4/5",
-            background: "var(--about-img-bg)",
-          }}
+          style={{ aspectRatio: "4/5", background: "var(--about-img-bg)" }}
         >
           <Image
             src="/assets/img/intro-image.png"
@@ -88,31 +59,16 @@ export default function AboutTeaserSection() {
             fill
             className="object-cover opacity-80 mix-blend-luminosity"
           />
-          {/* Overlay */}
           <div
             className="absolute inset-0"
             style={{ background: "var(--about-img-overlay)" }}
           />
         </div>
-
-        {/* Badge */}
-        <div
-          className="absolute -bottom-5 -left-5 rounded-md px-6 py-5 z-10"
-          style={{
-            backgroundColor: "var(--forest-dark)",
-            border: "1px solid var(--border-default)",
-          }}
-        >
-          <strong
-            className="block font-display text-[1.6rem]"
-            style={{ color: "var(--forest-sage)" }}
-          >
+        <div className="absolute -bottom-5 -left-5 rounded-md px-6 py-5 z-10 bg-forest-dark border border-border-DEFAULT">
+          <strong className="block font-display text-[1.6rem] text-forest-sage">
             SCG
           </strong>
-          <span
-            className="text-[0.72rem] tracking-[0.1em] uppercase"
-            style={{ color: "var(--text-muted)" }}
-          >
+          <span className="text-[0.72rem] text-text-muted tracking-[0.1em] uppercase">
             Spent Coffee Grounds
           </span>
         </div>

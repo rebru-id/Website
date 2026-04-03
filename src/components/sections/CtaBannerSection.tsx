@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Button from "@/components/ui/Button.tsx";
 
 export default function CtaBannerSection() {
   return (
@@ -7,7 +7,7 @@ export default function CtaBannerSection() {
       className="mx-12 mb-16 rounded-lg px-16 py-20 text-center relative overflow-hidden"
       style={{
         background: "var(--cta-gradient)",
-        border: "1px solid rgba(122, 171, 126, 0.15)",
+        border: "1px solid rgba(122,171,126,0.15)",
       }}
     >
       {/* Top accent */}
@@ -16,11 +16,12 @@ export default function CtaBannerSection() {
         style={{ background: "var(--cta-top-line)" }}
       />
 
+      {/* Teks — selalu terang karena bg selalu dark */}
       <h2
         className="font-display font-semibold leading-[1.2] mb-4"
         style={{
           fontSize: "clamp(2rem, 4vw, 3.5rem)",
-          color: "var(--cta-text)" /* selalu terang — bg selalu dark */,
+          color: "var(--cta-text)",
         }}
       >
         Every Cup of Coffee
@@ -41,20 +42,13 @@ export default function CtaBannerSection() {
       </p>
 
       <div className="flex gap-4 justify-center flex-wrap">
-        <Link href="/contact" className="btn-green">
+        <Button href="/contact" variant="green">
           <i className="fas fa-handshake" /> Become a Partner
-        </Link>
-        {/* Ghost button override — light text di atas dark bg */}
-        <Link
-          href="/products"
-          className="inline-flex items-center gap-2.5 px-9 py-4 text-[0.88rem] font-medium tracking-[0.08em] uppercase rounded-pill transition-all duration-300 cursor-pointer"
-          style={{
-            color: "var(--cta-text-sub)",
-            border: "1px solid rgba(200,223,201,0.25)",
-          }}
-        >
+        </Button>
+        {/* btn-ghost-dark — adapt untuk bg gelap (CTA selalu dark) */}
+        <Button href="/products" variant="ghost-dark">
           <i className="fas fa-shopping-bag" /> Shop Products
-        </Link>
+        </Button>
       </div>
     </section>
   );

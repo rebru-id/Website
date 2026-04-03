@@ -3,29 +3,28 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   REBRU — DESIGN TOKENS
-   Strategi: CSS Variables → Tailwind pakai var() → satu toggle ubah semua
+   REBRU DESIGN SYSTEM — CSS VARIABLES
+   Strategy:
+   - :root           → dark mode values (default)
+   - [data-theme="light"] → light mode values
+   - Tailwind reads via var(--...) in tailwind.config.ts
+   - CVA components consume btn-* variables
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── DARK MODE (default) ───────────────────────────────────────────────────── */
-:root {
-  /* Font */
-  --font-cormorant: "Cormorant Garamond", Georgia, serif;
-  --font-dm-sans: "DM Sans", sans-serif;
-  --font-space-mono: "Space Mono", monospace;
-
-  /* Background */
+:root,
+[data-theme="dark"] {
+  /* ── Backgrounds ── */
   --bg-primary: #1a0f0a;
   --bg-surface: #2d1810;
-  --bg-card: rgba(255, 255, 255, 0.025);
+  --bg-card: rgba(255, 255, 255, 0.03);
   --bg-elevated: #3a2015;
 
-  /* Text */
+  /* ── Text ── */
   --text-primary: #f0ebe3;
   --text-secondary: #b8a898;
   --text-muted: #6b5a4a;
 
-  /* Accents — sama di kedua mode */
+  /* ── Brand accents ── */
   --coffee-latte: #c4956a;
   --coffee-warm: #6b3f28;
   --coffee-mid: #4a2c1a;
@@ -35,12 +34,26 @@
   --forest-dark: #1a3a1b;
   --forest-mist: #c8dfc9;
 
-  /* Border */
+  /* ── Borders ── */
   --border-default: rgba(196, 149, 106, 0.12);
   --border-subtle: rgba(196, 149, 106, 0.07);
-  --border-strong: rgba(196, 149, 106, 0.25);
+  --border-strong: rgba(196, 149, 106, 0.28);
 
-  /* Hero gradient */
+  /* ── Button variables (consumed by CVA + .btn-* classes) ── */
+  --btn-ghost-color: var(--text-secondary);
+  --btn-ghost-border: var(--border-default);
+  --btn-ghost-hover-color: var(--text-primary);
+  --btn-ghost-hover-border: var(--border-strong);
+  --btn-ghost-hover-bg: var(--bg-card);
+
+  /* Ghost on dark bg (CTA section) */
+  --btn-ghost-dark-color: rgba(245, 239, 230, 0.75);
+  --btn-ghost-dark-border: rgba(200, 223, 201, 0.22);
+  --btn-ghost-dark-hover-color: #f5efe6;
+  --btn-ghost-dark-hover-border: rgba(200, 223, 201, 0.45);
+  --btn-ghost-dark-hover-bg: rgba(255, 255, 255, 0.06);
+
+  /* ── Sections — Hero ── */
   --hero-gradient:
     radial-gradient(
       ellipse 80% 60% at 70% 30%,
@@ -53,43 +66,20 @@
       transparent 60%
     ),
     linear-gradient(160deg, #1a0f0a 0%, #0f1a10 50%, #1a0f0a 100%);
+  --ring-border: rgba(196, 149, 106, 0.12);
+  --ring-shadow:
+    inset 0 0 80px rgba(196, 149, 106, 0.06), 0 0 120px rgba(45, 90, 46, 0.1);
+  --ring-inner-1: rgba(196, 149, 106, 0.07);
+  --ring-inner-2: rgba(74, 124, 78, 0.1);
+  --scroll-line: linear-gradient(to bottom, #c4956a, transparent);
 
-  /* Section backgrounds */
+  /* ── Sections — Impact ── */
   --impact-gradient: linear-gradient(
     180deg,
     #1a0f0a 0%,
     #0d1f0e 50%,
     #1a0f0a 100%
   );
-  --cta-gradient:
-    radial-gradient(
-      ellipse 80% 100% at 50% 100%,
-      rgba(45, 90, 46, 0.3) 0%,
-      transparent 70%
-    ),
-    linear-gradient(135deg, #2d1810 0%, #0d1f0e 100%);
-  --blog-card-bg: linear-gradient(135deg, #2d1810 0%, #0d1f0e 100%);
-  --about-img-bg: linear-gradient(135deg, #4a2c1a 0%, #1a3a1b 100%);
-  --about-img-overlay: linear-gradient(
-    to bottom,
-    transparent 40%,
-    rgba(26, 15, 10, 0.7)
-  );
-
-  /* Decorative ring */
-  --ring-border: rgba(196, 149, 106, 0.12);
-  --ring-shadow:
-    inset 0 0 80px rgba(196, 149, 106, 0.06), 0 0 120px rgba(45, 90, 46, 0.1);
-  --ring-inner-1: rgba(196, 149, 106, 0.07);
-  --ring-inner-2: rgba(74, 124, 78, 0.1);
-
-  /* Scroll line */
-  --scroll-line: linear-gradient(to bottom, #c4956a, transparent);
-
-  /* Navbar scrolled bg */
-  --nav-scrolled-bg: rgba(26, 15, 10, 0.92);
-
-  /* Impact section border lines */
   --impact-top-line: linear-gradient(90deg, transparent, #c4956a, transparent);
   --impact-bottom-line: linear-gradient(
     90deg,
@@ -97,99 +87,184 @@
     #2d5a2e,
     transparent
   );
+  --impact-grid-border: rgba(196, 149, 106, 0.1);
+  --impact-card-bg: rgba(255, 255, 255, 0.02);
+  --impact-card-hover: rgba(196, 149, 106, 0.04);
+  --impact-card-accent: var(--coffee-latte);
+  --impact-stat-num: var(--text-primary);
+  --impact-stat-unit: var(--text-secondary);
+  --impact-stat-label: var(--text-muted);
+  --impact-stat-sub: var(--forest-sage);
 
-  /* Logo */
-  --logo-src: url("/assets/img/logo.png");
+  /* ── Sections — About ── */
+  --about-img-bg: linear-gradient(135deg, #4a2c1a 0%, #1a3a1b 100%);
+  --about-img-overlay: linear-gradient(
+    to bottom,
+    transparent 40%,
+    rgba(26, 15, 10, 0.7)
+  );
+
+  /* ── Sections — CTA (always dark bg — standout di kedua mode) ── */
+  --cta-gradient:
+    radial-gradient(
+      ellipse 80% 100% at 50% 100%,
+      rgba(45, 90, 46, 0.35) 0%,
+      transparent 70%
+    ),
+    linear-gradient(135deg, #1a3a1b 0%, #0d1f0e 100%);
+  --cta-top-line: linear-gradient(
+    90deg,
+    transparent,
+    var(--forest-sage),
+    transparent
+  );
+  --cta-text: #f5efe6;
+  --cta-text-em: var(--forest-sage);
+  --cta-text-sub: rgba(245, 239, 230, 0.75);
+
+  /* ── Sections — Blog ── */
+  --blog-card-bg: linear-gradient(135deg, #2d1810 0%, #0d1f0e 100%);
+  --blog-card-border: var(--border-default);
+  --blog-card-quote: rgba(196, 149, 106, 0.12);
+  --blog-card-tag: var(--forest-sage);
+  --blog-card-title: var(--text-primary);
+  --blog-card-text: var(--text-secondary);
+  --blog-card-cta: var(--coffee-latte);
+  --blog-small-bg: var(--bg-card);
+  --blog-small-border: var(--border-subtle);
+
+  /* ── Navbar ── */
+  --nav-scrolled-bg: rgba(26, 15, 10, 0.92);
+  --nav-scrolled-border: var(--border-default);
 }
 
-/* ── LIGHT MODE ────────────────────────────────────────────────────────────── */
-.light {
-  /* Background */
+/* ── LIGHT MODE ───────────────────────────────────────────────────────────────
+   Kontras rules:
+   1. text-primary (#1a0f0a) vs bg-primary (#f5efe6) → ratio 16:1 ✓
+   2. text-secondary (#4a2c1a) vs bg-primary (#f5efe6) → ratio 8:1 ✓
+   3. text-muted (#7a5035) vs bg-primary (#f5efe6) → ratio 4.6:1 ✓
+   4. Cards = #ffffff di atas cream → visible dengan border
+   5. CTA tetap dark green → selalu standout
+   ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  /* ── Backgrounds ── */
   --bg-primary: #f5efe6;
   --bg-surface: #ede2d0;
-  --bg-card: rgba(0, 0, 0, 0.035);
-  --bg-elevated: #e3d4bc;
+  --bg-card: #ffffff;
+  --bg-elevated: #fff8f0;
 
-  /* Text */
-  --text-primary: #3d1f0d;
-  --text-secondary: #6b3f28;
-  --text-muted: #a07850;
+  /* ── Text — high contrast ── */
+  --text-primary: #1a0f0a;
+  --text-secondary: #4a2c1a;
+  --text-muted: #7a5035;
 
-  /* Accents — tetap sama */
-  --coffee-latte: #c4956a;
+  /* ── Brand accents (sebagian gelap di light mode) ── */
+  --coffee-latte: #b8844f;
   --coffee-warm: #6b3f28;
   --coffee-mid: #4a2c1a;
-  --forest-sage: #4a7c4e;
-  --forest-moss: #2d5a2e;
+  --forest-sage: #2d5a2e;
+  --forest-moss: #1a3a1b;
   --forest-leaf: #3a6640;
-  --forest-dark: #e8f4e8;
+  --forest-dark: #edf7ed;
   --forest-mist: #1a3a1b;
 
-  /* Border */
-  --border-default: rgba(107, 63, 40, 0.15);
-  --border-subtle: rgba(107, 63, 40, 0.08);
-  --border-strong: rgba(107, 63, 40, 0.28);
+  /* ── Borders ── */
+  --border-default: rgba(74, 44, 26, 0.18);
+  --border-subtle: rgba(74, 44, 26, 0.1);
+  --border-strong: rgba(74, 44, 26, 0.32);
 
-  /* Hero gradient — lebih terang */
+  /* ── Button variables ── */
+  --btn-ghost-color: var(--text-secondary);
+  --btn-ghost-border: var(--border-default);
+  --btn-ghost-hover-color: var(--text-primary);
+  --btn-ghost-hover-border: var(--border-strong);
+  --btn-ghost-hover-bg: var(--bg-card);
+
+  /* Ghost on dark bg tetap sama — CTA selalu dark */
+  --btn-ghost-dark-color: rgba(245, 239, 230, 0.75);
+  --btn-ghost-dark-border: rgba(200, 223, 201, 0.22);
+  --btn-ghost-dark-hover-color: #f5efe6;
+  --btn-ghost-dark-hover-border: rgba(200, 223, 201, 0.45);
+  --btn-ghost-dark-hover-bg: rgba(255, 255, 255, 0.06);
+
+  /* ── Hero ── */
   --hero-gradient:
     radial-gradient(
       ellipse 80% 60% at 70% 30%,
-      rgba(74, 124, 78, 0.12) 0%,
+      rgba(74, 124, 78, 0.09) 0%,
       transparent 60%
     ),
     radial-gradient(
       ellipse 60% 80% at 20% 80%,
-      rgba(196, 149, 106, 0.25) 0%,
+      rgba(196, 149, 106, 0.15) 0%,
       transparent 60%
     ),
-    linear-gradient(160deg, #f5efe6 0%, #eaf4eb 50%, #f5efe6 100%);
+    linear-gradient(160deg, #f5efe6 0%, #edf5ee 50%, #f5efe6 100%);
+  --ring-border: rgba(74, 44, 26, 0.14);
+  --ring-shadow:
+    inset 0 0 80px rgba(196, 149, 106, 0.06), 0 0 80px rgba(74, 124, 78, 0.07);
+  --ring-inner-1: rgba(74, 44, 26, 0.08);
+  --ring-inner-2: rgba(74, 124, 78, 0.1);
+  --scroll-line: linear-gradient(to bottom, #6b3f28, transparent);
 
-  /* Section backgrounds */
+  /* ── Impact — hijau muda, teks gelap ── */
   --impact-gradient: linear-gradient(
     180deg,
     #f5efe6 0%,
-    #eaf4eb 50%,
+    #e8f4e9 55%,
     #f5efe6 100%
   );
-  --cta-gradient:
-    radial-gradient(
-      ellipse 80% 100% at 50% 100%,
-      rgba(74, 124, 78, 0.12) 0%,
-      transparent 70%
-    ),
-    linear-gradient(135deg, #ede2d0 0%, #e8f4e8 100%);
-  --blog-card-bg: linear-gradient(135deg, #ede2d0 0%, #e8f4e8 100%);
-  --about-img-bg: linear-gradient(135deg, #d4bfa0 0%, #c8dfc9 100%);
-  --about-img-overlay: linear-gradient(
-    to bottom,
-    transparent 40%,
-    rgba(245, 239, 230, 0.7)
-  );
-
-  /* Decorative ring */
-  --ring-border: rgba(107, 63, 40, 0.15);
-  --ring-shadow:
-    inset 0 0 80px rgba(196, 149, 106, 0.08), 0 0 120px rgba(74, 124, 78, 0.08);
-  --ring-inner-1: rgba(107, 63, 40, 0.08);
-  --ring-inner-2: rgba(74, 124, 78, 0.12);
-
-  /* Scroll line */
-  --scroll-line: linear-gradient(to bottom, #6b3f28, transparent);
-
-  /* Navbar scrolled bg */
-  --nav-scrolled-bg: rgba(245, 239, 230, 0.92);
-
-  /* Impact section border lines */
   --impact-top-line: linear-gradient(90deg, transparent, #6b3f28, transparent);
   --impact-bottom-line: linear-gradient(
     90deg,
     transparent,
-    #4a7c4e,
+    #2d5a2e,
     transparent
   );
+  --impact-grid-border: rgba(74, 44, 26, 0.12);
+  --impact-card-bg: rgba(255, 255, 255, 0.72);
+  --impact-card-hover: rgba(255, 255, 255, 0.95);
+  --impact-card-accent: var(--coffee-warm);
+  --impact-stat-num: #1a0f0a;
+  --impact-stat-unit: #4a2c1a;
+  --impact-stat-label: #1a0f0a;
+  --impact-stat-sub: #1a3a1b;
 
-  /* Logo */
-  --logo-src: url("/assets/img/Glogo.png");
+  /* ── About ── */
+  --about-img-bg: linear-gradient(135deg, #d4bfa0 0%, #c8dfc9 100%);
+  --about-img-overlay: linear-gradient(
+    to bottom,
+    transparent 40%,
+    rgba(245, 239, 230, 0.65)
+  );
+
+  /* ── CTA — TETAP dark green ── */
+  --cta-gradient:
+    radial-gradient(
+      ellipse 80% 100% at 50% 100%,
+      rgba(45, 90, 46, 0.45) 0%,
+      transparent 70%
+    ),
+    linear-gradient(135deg, #1a3a1b 0%, #0d1f0e 100%);
+  --cta-top-line: linear-gradient(90deg, transparent, #7aab7e, transparent);
+  --cta-text: #f5efe6;
+  --cta-text-em: #7aab7e;
+  --cta-text-sub: rgba(245, 239, 230, 0.75);
+
+  /* ── Blog — warm white cards ── */
+  --blog-card-bg: linear-gradient(135deg, #fff8f0 0%, #f0f9f0 100%);
+  --blog-card-border: rgba(74, 44, 26, 0.15);
+  --blog-card-quote: rgba(107, 63, 40, 0.12);
+  --blog-card-tag: #1a3a1b;
+  --blog-card-title: #1a0f0a;
+  --blog-card-text: #4a2c1a;
+  --blog-card-cta: #6b3f28;
+  --blog-small-bg: #ffffff;
+  --blog-small-border: rgba(74, 44, 26, 0.12);
+
+  /* ── Navbar ── */
+  --nav-scrolled-bg: rgba(245, 239, 230, 0.94);
+  --nav-scrolled-border: var(--border-default);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -201,35 +276,33 @@
   *::after {
     @apply box-border;
   }
-
   html {
     scroll-behavior: smooth;
   }
 
   body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    @apply font-body overflow-x-hidden;
+    @apply bg-bg-primary text-text-primary font-body overflow-x-hidden antialiased;
     font-size: 16px;
     line-height: 1.6;
     transition:
-      background-color 0.3s ease,
-      color 0.3s ease;
+      background-color 0.35s ease,
+      color 0.35s ease;
   }
 
-  /* Grain texture — sedikit lebih tipis di light mode */
+  /* Grain texture overlay — z-[9000] intentional (always on top) */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
     pointer-events: none;
-    z-index: 9999;
-    opacity: 0.25;
+    z-index: 9000;
+    opacity: 0.28;
+    transition: opacity 0.35s ease;
   }
 
-  .light body::before {
-    opacity: 0.15;
+  [data-theme="light"] body::before {
+    opacity: 0.14;
   }
 
   a {
@@ -238,112 +311,118 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   COMPONENTS
+   COMPONENTS — Button System (CSS Variable + CVA-ready)
    ═══════════════════════════════════════════════════════════════════════════ */
 @layer components {
+  /* ── Base button shell (consumed by CVA) ── */
+  .btn {
+    @apply inline-flex items-center gap-2.5
+           text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill transition-all duration-300 cursor-pointer;
+  }
+
+  .btn-md {
+    @apply px-9 py-4;
+  }
+  .btn-sm {
+    @apply px-5 py-2.5;
+  }
+
+  /* ── btn-primary ── */
+  .btn-primary {
+    @apply btn btn-md;
+    background: linear-gradient(135deg, var(--coffee-warm), var(--coffee-mid));
+    color: #f5efe6;
+    border: 1px solid var(--border-strong);
+  }
+  .btn-primary:hover {
+    @apply -translate-y-0.5;
+    border-color: var(--coffee-latte);
+    box-shadow: 0 8px 32px rgba(74, 44, 26, 0.4);
+  }
+
+  /* ── btn-ghost — theme-aware via CSS variables ── */
+  .btn-ghost {
+    @apply btn btn-md;
+    color: var(--btn-ghost-color);
+    border: 1px solid var(--btn-ghost-border);
+    background: transparent;
+  }
+  .btn-ghost:hover {
+    color: var(--btn-ghost-hover-color);
+    border-color: var(--btn-ghost-hover-border);
+    background-color: var(--btn-ghost-hover-bg);
+  }
+
+  /* ── btn-ghost-dark — untuk section dengan dark bg (CTA) ── */
+  .btn-ghost-dark {
+    @apply btn btn-md;
+    color: var(--btn-ghost-dark-color);
+    border: 1px solid var(--btn-ghost-dark-border);
+    background: transparent;
+  }
+  .btn-ghost-dark:hover {
+    color: var(--btn-ghost-dark-hover-color);
+    border-color: var(--btn-ghost-dark-hover-border);
+    background-color: var(--btn-ghost-dark-hover-bg);
+  }
+
+  /* ── btn-green ── */
+  .btn-green {
+    @apply btn btn-md;
+    background: linear-gradient(135deg, #1a3a1b, #0d1f0e);
+    color: #f5efe6;
+    border: 1px solid rgba(74, 124, 78, 0.35);
+  }
+  .btn-green:hover {
+    @apply -translate-y-0.5;
+    box-shadow: 0 8px 28px rgba(45, 90, 46, 0.35);
+  }
+
+  /* ── Section label & title ── */
   .section-label {
     @apply font-mono text-[0.7rem] tracking-[0.25em] uppercase block;
     color: var(--forest-sage);
   }
 
   .section-title {
-    @apply font-display font-semibold leading-tight;
-    color: var(--text-primary);
+    @apply font-display font-semibold leading-tight text-text-primary;
     font-size: clamp(2rem, 4vw, 3.2rem);
   }
 
-  /* ── Card ── */
+  /* ── Card base ── */
   .card-base {
+    @apply rounded-lg transition-all duration-300;
     background: var(--bg-card);
     border: 1px solid var(--border-default);
-    @apply rounded-lg transition-all duration-300;
   }
-
   .card-base:hover {
     background: var(--bg-elevated);
     border-color: var(--border-strong);
   }
 
-  /* ── Buttons ── */
-  .btn-primary {
-    @apply inline-flex items-center gap-2.5 px-9 py-4
-           text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill transition-all duration-300 cursor-pointer;
-    background: linear-gradient(135deg, var(--coffee-warm), var(--coffee-mid));
-    color: #f5efe6;
-    border: 1px solid var(--border-strong);
-  }
-
-  .btn-primary:hover {
-    @apply -translate-y-0.5;
-    box-shadow: 0 8px 32px rgba(74, 44, 26, 0.4);
-    border-color: var(--coffee-latte);
-  }
-
-  .btn-ghost {
-    @apply inline-flex items-center gap-2.5 px-9 py-4
-           text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill transition-all duration-300 cursor-pointer;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-default);
-  }
-
-  .btn-ghost:hover {
-    color: var(--text-primary);
-    border-color: var(--border-strong);
-    background: var(--bg-card);
-  }
-
-  .btn-green {
-    @apply inline-flex items-center gap-2.5 px-9 py-4
-           text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill transition-all duration-300 cursor-pointer;
-    background: linear-gradient(135deg, var(--forest-moss), var(--forest-dark));
-    color: var(--forest-mist);
-    border: 1px solid rgba(74, 124, 78, 0.3);
-  }
-
-  .light .btn-green {
-    color: #f5efe6;
-  }
-
-  .btn-green:hover {
-    @apply -translate-y-0.5;
-    box-shadow: 0 8px 28px rgba(45, 90, 46, 0.35);
-  }
-
   /* ── Dashboard ── */
   .dash-stat-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-default);
-    @apply rounded-md p-7 transition-all duration-300;
-  }
-
-  .dash-stat-card:hover {
-    background: var(--bg-elevated);
+    @apply card-base rounded-md p-7;
   }
 
   .dash-table {
     @apply w-full border-collapse;
   }
-
   .dash-table th {
-    @apply px-5 py-3.5 text-left font-mono text-[0.65rem] tracking-[0.15em] uppercase border-b;
+    @apply px-5 py-3.5 text-left font-mono text-[0.65rem] tracking-[0.15em] uppercase;
     color: var(--text-muted);
     background: var(--bg-card);
-    border-color: var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
   }
-
   .dash-table td {
-    @apply px-5 py-3.5 text-[0.88rem] border-b;
+    @apply px-5 py-3.5 text-[0.88rem];
     color: var(--text-secondary);
-    border-color: var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
   }
-
   .dash-table tr:last-child td {
-    @apply border-b-0;
+    border-bottom: none;
   }
-
   .dash-table tr:hover td {
     background: var(--bg-card);
   }
@@ -352,7 +431,6 @@
   .status-pill {
     @apply inline-block px-2.5 py-0.5 rounded-pill text-[0.68rem] tracking-[0.08em];
   }
-
   .status-pending {
     background: rgba(200, 168, 75, 0.15);
     color: #c8a84b;
@@ -370,24 +448,21 @@
     color: var(--forest-sage);
   }
 
-  /* ── Theme toggle button ── */
+  /* ── Theme toggle ── */
   .theme-toggle {
-    @apply flex items-center justify-center rounded-full transition-all duration-300;
-    /* 1/2 ukuran navbar item — sangat minimal */
+    @apply flex items-center justify-center rounded-full
+           transition-all duration-300 flex-shrink-0;
     width: 26px;
     height: 26px;
     border: 1px solid var(--border-default);
     color: var(--text-muted);
     background: transparent;
-    flex-shrink: 0;
   }
-
   .theme-toggle:hover {
     border-color: var(--border-strong);
     color: var(--coffee-latte);
     background: var(--bg-card);
   }
-
   .theme-toggle svg {
     width: 13px;
     height: 13px;
@@ -416,5 +491,17 @@
   }
   .animation-fill-forwards {
     animation-fill-mode: forwards;
+  }
+
+  /* Accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-particle,
+    .animate-ring-float,
+    .animate-scroll-pulse {
+      animation: none !important;
+    }
+    * {
+      transition-duration: 0.01ms !important;
+    }
   }
 }
