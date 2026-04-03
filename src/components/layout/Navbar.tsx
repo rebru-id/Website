@@ -42,7 +42,7 @@ export default function Navbar() {
       <header
         className={cn(
           "fixed top-0 left-0 right-0 z-50 transition-all duration-400",
-          scrolled && "backdrop-blur-xl border-b border-border-DEFAULT",
+          scrolled && "backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.25)]",
         )}
         style={
           scrolled ? { backgroundColor: "var(--nav-scrolled-bg)" } : undefined
