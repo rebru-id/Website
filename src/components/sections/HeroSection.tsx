@@ -8,65 +8,69 @@ export default function HeroSection() {
       id="hero"
       className="relative min-h-screen flex flex-col justify-end pt-40 px-12 pb-20"
     >
-      {/* Background */}
+      {/* Background — pakai CSS variable, otomatis ganti saat mode berubah */}
       <div
-        className="absolute inset-0"
-        style={{
-          background: `
-            radial-gradient(ellipse 80% 60% at 70% 30%, rgba(45, 90, 46, 0.18) 0%, transparent 60%),
-            radial-gradient(ellipse 60% 80% at 20% 80%, rgba(74, 44, 26, 0.4) 0%, transparent 60%),
-            linear-gradient(160deg, #1a0f0a 0%, #0f1a10 50%, #1a0f0a 100%)
-          `,
-        }}
+        className="absolute inset-0 transition-all duration-500"
+        style={{ background: "var(--hero-gradient)" }}
       />
 
-      {/* Decorative ring */}
+      {/* Decorative ring — warna dari CSS variable */}
       <div
         className="absolute top-[12%] right-[8%] w-[420px] h-[420px] rounded-full animate-ring-float pointer-events-none"
         style={{
-          border: "1px solid rgba(196, 149, 106, 0.12)",
-          boxShadow:
-            "inset 0 0 80px rgba(196,149,106,0.06), 0 0 120px rgba(45,90,46,0.1)",
+          border: "1px solid var(--ring-border)",
+          boxShadow: "var(--ring-shadow)",
         }}
       >
         <div
           className="absolute inset-5 rounded-full"
-          style={{ border: "1px solid rgba(196,149,106,0.07)" }}
+          style={{ border: "1px solid var(--ring-inner-1)" }}
         />
         <div
           className="absolute inset-[50px] rounded-full"
-          style={{ border: "1px solid rgba(74,124,78,0.1)" }}
+          style={{ border: "1px solid var(--ring-inner-2)" }}
         />
       </div>
 
-      {/* Floating particles */}
+      {/* Particles */}
       <Particles />
 
       {/* Content */}
       <div className="relative z-10 max-w-[780px]">
         <p
-          className="inline-flex items-center gap-2.5 font-mono text-[0.72rem] tracking-[0.2em] uppercase text-forest-sage mb-7
+          className="inline-flex items-center gap-2.5 font-mono text-[0.72rem] tracking-[0.2em] uppercase mb-7
                      opacity-0 animate-fade-up animation-fill-forwards animation-delay-300"
+          style={{ color: "var(--forest-sage)" }}
         >
-          <span className="block w-8 h-px bg-forest-sage" />
+          <span
+            className="block w-8 h-px"
+            style={{ background: "var(--forest-sage)" }}
+          />
           Makassar · South Sulawesi · Indonesia
         </p>
 
         <h1
-          className="font-display font-semibold text-coffee-foam leading-[1.0] mb-7
+          className="font-display font-semibold leading-[1.0] mb-7
                      opacity-0 animate-fade-up animation-fill-forwards animation-delay-500"
-          style={{ fontSize: "clamp(3.2rem, 7vw, 6.5rem)" }}
+          style={{
+            fontSize: "clamp(3.2rem, 7vw, 6.5rem)",
+            color: "var(--text-primary)",
+          }}
         >
           Brewing
           <br />
-          <em className="italic text-coffee-latte">Scalable</em> Impact
+          <em className="italic" style={{ color: "var(--coffee-latte)" }}>
+            Scalable
+          </em>{" "}
+          Impact
           <br />
-          <span className="text-forest-sage">From Coffee Waste</span>
+          <span style={{ color: "var(--forest-sage)" }}>From Coffee Waste</span>
         </h1>
 
         <p
-          className="text-[1rem] text-ink-dim max-w-[480px] leading-[1.8] mb-11
+          className="text-[1rem] max-w-[480px] leading-[1.8] mb-11
                      opacity-0 animate-fade-up animation-fill-forwards animation-delay-700"
+          style={{ color: "var(--text-secondary)" }}
         >
           We transform spent coffee grounds into biochar, compost, and
           sustainable materials — driving circular economy solutions across
@@ -90,13 +94,14 @@ export default function HeroSection() {
       <div className="absolute bottom-8 right-12 flex flex-col items-center gap-2 opacity-40 pointer-events-none">
         <div
           className="w-px h-16 animate-scroll-pulse"
-          style={{
-            background: "linear-gradient(to bottom, #c4956a, transparent)",
-          }}
+          style={{ background: "var(--scroll-line)" }}
         />
         <span
-          className="font-mono text-[0.6rem] tracking-[0.15em] uppercase text-ink-dim"
-          style={{ writingMode: "vertical-rl" }}
+          className="font-mono text-[0.6rem] tracking-[0.15em] uppercase"
+          style={{
+            writingMode: "vertical-rl",
+            color: "var(--text-secondary)",
+          }}
         >
           Scroll
         </span>
@@ -105,9 +110,8 @@ export default function HeroSection() {
   );
 }
 
-// ── Particles (client-side, deterministic via seed) ───────────────────────────
+// ── Particles ─────────────────────────────────────────────────────────────────
 function Particles() {
-  // Pre-generated so it's consistent (no random on each render / hydration)
   const particles = [
     {
       left: "8%",
@@ -213,7 +217,10 @@ function Particles() {
               bottom: p.bottom,
               width: p.size,
               height: p.size,
-              background: p.green ? "#7aab7e" : "#c4956a",
+              // Particles ikut CSS variable warna accent
+              background: p.green
+                ? "var(--forest-sage)"
+                : "var(--coffee-latte)",
               animationDuration: `${p.dur}s`,
               animationDelay: `${p.delay}s`,
               "--drift": `${p.drift}px`,

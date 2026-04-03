@@ -2,16 +2,203 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── CSS Custom Properties ───────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   REBRU — DESIGN TOKENS
+   Strategi: CSS Variables → Tailwind pakai var() → satu toggle ubah semua
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── DARK MODE (default) ───────────────────────────────────────────────────── */
 :root {
+  /* Font */
   --font-cormorant: "Cormorant Garamond", Georgia, serif;
   --font-dm-sans: "DM Sans", sans-serif;
   --font-space-mono: "Space Mono", monospace;
+
+  /* Background */
+  --bg-primary: #1a0f0a;
+  --bg-surface: #2d1810;
+  --bg-card: rgba(255, 255, 255, 0.025);
+  --bg-elevated: #3a2015;
+
+  /* Text */
+  --text-primary: #f0ebe3;
+  --text-secondary: #b8a898;
+  --text-muted: #6b5a4a;
+
+  /* Accents — sama di kedua mode */
+  --coffee-latte: #c4956a;
+  --coffee-warm: #6b3f28;
+  --coffee-mid: #4a2c1a;
+  --forest-sage: #7aab7e;
+  --forest-moss: #2d5a2e;
+  --forest-leaf: #4a7c4e;
+  --forest-dark: #1a3a1b;
+  --forest-mist: #c8dfc9;
+
+  /* Border */
+  --border-default: rgba(196, 149, 106, 0.12);
+  --border-subtle: rgba(196, 149, 106, 0.07);
+  --border-strong: rgba(196, 149, 106, 0.25);
+
+  /* Hero gradient */
+  --hero-gradient:
+    radial-gradient(
+      ellipse 80% 60% at 70% 30%,
+      rgba(45, 90, 46, 0.18) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 60% 80% at 20% 80%,
+      rgba(74, 44, 26, 0.4) 0%,
+      transparent 60%
+    ),
+    linear-gradient(160deg, #1a0f0a 0%, #0f1a10 50%, #1a0f0a 100%);
+
+  /* Section backgrounds */
+  --impact-gradient: linear-gradient(
+    180deg,
+    #1a0f0a 0%,
+    #0d1f0e 50%,
+    #1a0f0a 100%
+  );
+  --cta-gradient:
+    radial-gradient(
+      ellipse 80% 100% at 50% 100%,
+      rgba(45, 90, 46, 0.3) 0%,
+      transparent 70%
+    ),
+    linear-gradient(135deg, #2d1810 0%, #0d1f0e 100%);
+  --blog-card-bg: linear-gradient(135deg, #2d1810 0%, #0d1f0e 100%);
+  --about-img-bg: linear-gradient(135deg, #4a2c1a 0%, #1a3a1b 100%);
+  --about-img-overlay: linear-gradient(
+    to bottom,
+    transparent 40%,
+    rgba(26, 15, 10, 0.7)
+  );
+
+  /* Decorative ring */
+  --ring-border: rgba(196, 149, 106, 0.12);
+  --ring-shadow:
+    inset 0 0 80px rgba(196, 149, 106, 0.06), 0 0 120px rgba(45, 90, 46, 0.1);
+  --ring-inner-1: rgba(196, 149, 106, 0.07);
+  --ring-inner-2: rgba(74, 124, 78, 0.1);
+
+  /* Scroll line */
+  --scroll-line: linear-gradient(to bottom, #c4956a, transparent);
+
+  /* Navbar scrolled bg */
+  --nav-scrolled-bg: rgba(26, 15, 10, 0.92);
+
+  /* Impact section border lines */
+  --impact-top-line: linear-gradient(90deg, transparent, #c4956a, transparent);
+  --impact-bottom-line: linear-gradient(
+    90deg,
+    transparent,
+    #2d5a2e,
+    transparent
+  );
+
+  /* Logo */
+  --logo-src: url("/assets/img/logo.png");
 }
 
-/* ── Base reset ──────────────────────────────────────────────────────────────── */
+/* ── LIGHT MODE ────────────────────────────────────────────────────────────── */
+.light {
+  /* Background */
+  --bg-primary: #f5efe6;
+  --bg-surface: #ede2d0;
+  --bg-card: rgba(0, 0, 0, 0.035);
+  --bg-elevated: #e3d4bc;
+
+  /* Text */
+  --text-primary: #3d1f0d;
+  --text-secondary: #6b3f28;
+  --text-muted: #a07850;
+
+  /* Accents — tetap sama */
+  --coffee-latte: #c4956a;
+  --coffee-warm: #6b3f28;
+  --coffee-mid: #4a2c1a;
+  --forest-sage: #4a7c4e;
+  --forest-moss: #2d5a2e;
+  --forest-leaf: #3a6640;
+  --forest-dark: #e8f4e8;
+  --forest-mist: #1a3a1b;
+
+  /* Border */
+  --border-default: rgba(107, 63, 40, 0.15);
+  --border-subtle: rgba(107, 63, 40, 0.08);
+  --border-strong: rgba(107, 63, 40, 0.28);
+
+  /* Hero gradient — lebih terang */
+  --hero-gradient:
+    radial-gradient(
+      ellipse 80% 60% at 70% 30%,
+      rgba(74, 124, 78, 0.12) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 60% 80% at 20% 80%,
+      rgba(196, 149, 106, 0.25) 0%,
+      transparent 60%
+    ),
+    linear-gradient(160deg, #f5efe6 0%, #eaf4eb 50%, #f5efe6 100%);
+
+  /* Section backgrounds */
+  --impact-gradient: linear-gradient(
+    180deg,
+    #f5efe6 0%,
+    #eaf4eb 50%,
+    #f5efe6 100%
+  );
+  --cta-gradient:
+    radial-gradient(
+      ellipse 80% 100% at 50% 100%,
+      rgba(74, 124, 78, 0.12) 0%,
+      transparent 70%
+    ),
+    linear-gradient(135deg, #ede2d0 0%, #e8f4e8 100%);
+  --blog-card-bg: linear-gradient(135deg, #ede2d0 0%, #e8f4e8 100%);
+  --about-img-bg: linear-gradient(135deg, #d4bfa0 0%, #c8dfc9 100%);
+  --about-img-overlay: linear-gradient(
+    to bottom,
+    transparent 40%,
+    rgba(245, 239, 230, 0.7)
+  );
+
+  /* Decorative ring */
+  --ring-border: rgba(107, 63, 40, 0.15);
+  --ring-shadow:
+    inset 0 0 80px rgba(196, 149, 106, 0.08), 0 0 120px rgba(74, 124, 78, 0.08);
+  --ring-inner-1: rgba(107, 63, 40, 0.08);
+  --ring-inner-2: rgba(74, 124, 78, 0.12);
+
+  /* Scroll line */
+  --scroll-line: linear-gradient(to bottom, #6b3f28, transparent);
+
+  /* Navbar scrolled bg */
+  --nav-scrolled-bg: rgba(245, 239, 230, 0.92);
+
+  /* Impact section border lines */
+  --impact-top-line: linear-gradient(90deg, transparent, #6b3f28, transparent);
+  --impact-bottom-line: linear-gradient(
+    90deg,
+    transparent,
+    #4a7c4e,
+    transparent
+  );
+
+  /* Logo */
+  --logo-src: url("/assets/img/Glogo.png");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BASE
+   ═══════════════════════════════════════════════════════════════════════════ */
 @layer base {
-  * {
+  *,
+  *::before,
+  *::after {
     @apply box-border;
   }
 
@@ -20,12 +207,17 @@
   }
 
   body {
-    @apply bg-coffee-deep text-ink font-body overflow-x-hidden;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    @apply font-body overflow-x-hidden;
     font-size: 16px;
     line-height: 1.6;
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
   }
 
-  /* Grain texture overlay */
+  /* Grain texture — sedikit lebih tipis di light mode */
   body::before {
     content: "";
     position: fixed;
@@ -33,7 +225,11 @@
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
     pointer-events: none;
     z-index: 9999;
-    opacity: 0.35;
+    opacity: 0.25;
+  }
+
+  .light body::before {
+    opacity: 0.15;
   }
 
   a {
@@ -41,93 +237,107 @@
   }
 }
 
-/* ── Reusable component classes ──────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENTS
+   ═══════════════════════════════════════════════════════════════════════════ */
 @layer components {
-  /* Section label — mono uppercase small */
   .section-label {
-    @apply font-mono text-[0.7rem] tracking-[0.25em] uppercase text-forest-sage block;
+    @apply font-mono text-[0.7rem] tracking-[0.25em] uppercase block;
+    color: var(--forest-sage);
   }
 
-  /* Section title — display font */
   .section-title {
-    @apply font-display text-coffee-foam font-semibold leading-tight;
+    @apply font-display font-semibold leading-tight;
+    color: var(--text-primary);
     font-size: clamp(2rem, 4vw, 3.2rem);
   }
 
-  /* Horizontal divider line */
-  .divider-line {
-    @apply w-full h-px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      theme(colors.coffee.latte),
-      transparent
-    );
-  }
-
-  /* Card base */
+  /* ── Card ── */
   .card-base {
-    @apply bg-white/[0.025] border border-white/[0.06] rounded-lg transition-all duration-300;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    @apply rounded-lg transition-all duration-300;
   }
 
   .card-base:hover {
-    @apply bg-white/[0.04] border-coffee-latte/15;
+    background: var(--bg-elevated);
+    border-color: var(--border-strong);
   }
 
-  /* Buttons */
+  /* ── Buttons ── */
   .btn-primary {
     @apply inline-flex items-center gap-2.5 px-9 py-4
-           bg-gradient-to-br from-coffee-warm to-coffee-mid
-           text-coffee-foam text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill border border-coffee-latte/30
-           transition-all duration-300 cursor-pointer;
+           text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill transition-all duration-300 cursor-pointer;
+    background: linear-gradient(135deg, var(--coffee-warm), var(--coffee-mid));
+    color: #f5efe6;
+    border: 1px solid var(--border-strong);
   }
 
   .btn-primary:hover {
-    @apply -translate-y-0.5 shadow-[0_8px_32px_rgba(74,44,26,0.5)] border-coffee-latte;
+    @apply -translate-y-0.5;
+    box-shadow: 0 8px 32px rgba(74, 44, 26, 0.4);
+    border-color: var(--coffee-latte);
   }
 
   .btn-ghost {
     @apply inline-flex items-center gap-2.5 px-9 py-4
-           text-ink-dim text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill border border-white/10
-           transition-all duration-300 cursor-pointer;
+           text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill transition-all duration-300 cursor-pointer;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-default);
   }
 
   .btn-ghost:hover {
-    @apply text-ink border-white/25 bg-white/[0.04];
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    background: var(--bg-card);
   }
 
   .btn-green {
     @apply inline-flex items-center gap-2.5 px-9 py-4
-           bg-gradient-to-br from-forest-moss to-forest-dark
-           text-forest-mist text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill border border-forest-sage/30
-           transition-all duration-300 cursor-pointer;
+           text-[0.88rem] font-medium tracking-[0.08em] uppercase
+           rounded-pill transition-all duration-300 cursor-pointer;
+    background: linear-gradient(135deg, var(--forest-moss), var(--forest-dark));
+    color: var(--forest-mist);
+    border: 1px solid rgba(74, 124, 78, 0.3);
+  }
+
+  .light .btn-green {
+    color: #f5efe6;
   }
 
   .btn-green:hover {
-    @apply -translate-y-0.5 shadow-[0_8px_28px_rgba(45,90,46,0.4)]
-           from-forest-leaf to-forest-moss;
+    @apply -translate-y-0.5;
+    box-shadow: 0 8px 28px rgba(45, 90, 46, 0.35);
   }
 
-  /* Dashboard stat card */
+  /* ── Dashboard ── */
   .dash-stat-card {
-    @apply card-base rounded-md p-7;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    @apply rounded-md p-7 transition-all duration-300;
   }
 
-  /* Dashboard table */
+  .dash-stat-card:hover {
+    background: var(--bg-elevated);
+  }
+
   .dash-table {
     @apply w-full border-collapse;
   }
 
   .dash-table th {
-    @apply px-5 py-3.5 text-left font-mono text-[0.65rem] tracking-[0.15em]
-           uppercase text-ink-ghost bg-white/[0.02] border-b border-white/[0.05];
+    @apply px-5 py-3.5 text-left font-mono text-[0.65rem] tracking-[0.15em] uppercase border-b;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    border-color: var(--border-subtle);
   }
 
   .dash-table td {
-    @apply px-5 py-3.5 text-[0.88rem] text-ink-dim border-b border-white/[0.03];
+    @apply px-5 py-3.5 text-[0.88rem] border-b;
+    color: var(--text-secondary);
+    border-color: var(--border-subtle);
   }
 
   .dash-table tr:last-child td {
@@ -135,29 +345,59 @@
   }
 
   .dash-table tr:hover td {
-    @apply bg-white/[0.02];
+    background: var(--bg-card);
   }
 
-  /* Status pills */
+  /* ── Status pills ── */
   .status-pill {
     @apply inline-block px-2.5 py-0.5 rounded-pill text-[0.68rem] tracking-[0.08em];
   }
 
   .status-pending {
-    @apply bg-gold/15 text-gold;
+    background: rgba(200, 168, 75, 0.15);
+    color: #c8a84b;
   }
   .status-approved {
-    @apply bg-forest-moss/25 text-forest-sage;
+    background: rgba(45, 90, 46, 0.25);
+    color: var(--forest-sage);
   }
   .status-rejected {
-    @apply bg-red-900/25 text-red-400;
+    background: rgba(127, 29, 29, 0.25);
+    color: #f87171;
   }
   .status-verified {
-    @apply bg-forest-moss/25 text-forest-sage;
+    background: rgba(45, 90, 46, 0.25);
+    color: var(--forest-sage);
+  }
+
+  /* ── Theme toggle button ── */
+  .theme-toggle {
+    @apply flex items-center justify-center rounded-full transition-all duration-300;
+    /* 1/2 ukuran navbar item — sangat minimal */
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border-default);
+    color: var(--text-muted);
+    background: transparent;
+    flex-shrink: 0;
+  }
+
+  .theme-toggle:hover {
+    border-color: var(--border-strong);
+    color: var(--coffee-latte);
+    background: var(--bg-card);
+  }
+
+  .theme-toggle svg {
+    width: 13px;
+    height: 13px;
+    stroke-width: 1.8;
   }
 }
 
-/* ── Animation utilities ─────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
 @layer utilities {
   .animation-delay-300 {
     animation-delay: 300ms;
@@ -174,12 +414,7 @@
   .animation-delay-1100 {
     animation-delay: 1100ms;
   }
-
   .animation-fill-forwards {
     animation-fill-mode: forwards;
-  }
-
-  .opacity-0-start {
-    opacity: 0;
   }
 }
