@@ -41,14 +41,14 @@
 
   /* ── Button variables (consumed by CVA + .btn-* classes) ── */
   --btn-ghost-color: var(--text-secondary);
-  --btn-ghost-border: var(--border-default);
+  --btn-ghost-border: rgba(196, 149, 106, 0.45);
   --btn-ghost-hover-color: var(--text-primary);
-  --btn-ghost-hover-border: var(--border-strong);
+  --btn-ghost-hover-border: rgba(196, 149, 106, 0.7);
   --btn-ghost-hover-bg: var(--bg-card);
 
   /* Ghost on dark bg (CTA section) */
   --btn-ghost-dark-color: rgba(245, 239, 230, 0.75);
-  --btn-ghost-dark-border: rgba(200, 223, 201, 0.22);
+  --btn-ghost-dark-border: rgba(200, 223, 201, 0.5);
   --btn-ghost-dark-hover-color: #f5efe6;
   --btn-ghost-dark-hover-border: rgba(200, 223, 201, 0.45);
   --btn-ghost-dark-hover-bg: rgba(255, 255, 255, 0.06);
@@ -185,14 +185,14 @@
 
   /* ── Button variables ── */
   --btn-ghost-color: var(--text-secondary);
-  --btn-ghost-border: var(--border-default);
+  --btn-ghost-border: rgba(74, 44, 26, 0.38);
   --btn-ghost-hover-color: var(--text-primary);
-  --btn-ghost-hover-border: var(--border-strong);
+  --btn-ghost-hover-border: rgba(74, 44, 26, 0.55);
   --btn-ghost-hover-bg: var(--bg-card);
 
   /* Ghost on dark bg tetap sama — CTA selalu dark */
   --btn-ghost-dark-color: rgba(245, 239, 230, 0.75);
-  --btn-ghost-dark-border: rgba(200, 223, 201, 0.22);
+  --btn-ghost-dark-border: rgba(200, 223, 201, 0.5);
   --btn-ghost-dark-hover-color: #f5efe6;
   --btn-ghost-dark-hover-border: rgba(200, 223, 201, 0.45);
   --btn-ghost-dark-hover-bg: rgba(255, 255, 255, 0.06);
@@ -337,8 +337,8 @@
   /* ── Base button shell (consumed by CVA) ── */
   .btn {
     @apply inline-flex items-center gap-2.5
-           text-[0.88rem] font-medium tracking-[0.08em] uppercase
-           rounded-pill transition-all duration-300 cursor-pointer;
+             text-[0.88rem] font-medium tracking-[0.08em] uppercase leading-none
+             rounded-pill transition-all duration-300 cursor-pointer;
   }
 
   .btn-md {

@@ -104,12 +104,12 @@ export default function Footer() {
             &copy; 2025 Rebru. All Rights Reserved.
           </p>
 
-          {/* Dashboard lock icon — subtle, hanya yang tahu */}
+          {/* Dashboard lock icon — border-border-DEFAULT menggantikan border-border-subtle */}
           <div className="relative group">
             <button
               onClick={openModal}
               aria-label="Dashboard Access"
-              className="flex items-center justify-center w-9 h-9 rounded-full border border-border-subtle text-text-muted hover:border-border-strong hover:text-coffee-latte hover:bg-bg-card transition-all duration-300"
+              className="flex items-center justify-center w-9 h-9 rounded-full border border-border-DEFAULT text-text-muted hover:border-border-strong hover:text-coffee-latte hover:bg-bg-card transition-all duration-300"
             >
               <i className="fas fa-lock text-[0.75rem]" />
             </button>
