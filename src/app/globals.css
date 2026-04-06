@@ -140,6 +140,12 @@
   /* ── ICON ── */
   --icon-sun: #f4d38a; /* kuning senja */
   --icon-moon: #8b5e3c; /* coklat soft */
+
+  /* ── Sections — About Full Page (dark mode) ── */
+  --about-hero-gradient: var(--hero-gradient);
+  --about-orbit-glow: rgba(196, 149, 106, 0.08);
+  --about-step-divider: var(--border-default);
+  --about-values-glow: rgba(74, 44, 26, 0.12);
 }
 
 /* ── LIGHT MODE ───────────────────────────────────────────────────────────────
@@ -273,6 +279,12 @@
   /* ── ICON ── */
   --icon-sun: #e6b85c; /* sedikit lebih gelap biar kontras */
   --icon-moon: #6b4a2f; /* lebih dalam biar kebaca di light bg */
+
+  /* ── Sections — About Full Page (light mode) ── */
+  --about-hero-gradient: var(--hero-gradient);
+  --about-orbit-glow: rgba(74, 44, 26, 0.06);
+  --about-step-divider: var(--border-default);
+  --about-values-glow: rgba(196, 149, 106, 0.08);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
