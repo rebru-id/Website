@@ -1,0 +1,98 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+function useInView(threshold = 0.15) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { threshold },
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [threshold]);
+  return { ref, inView };
+}
+
+export default function ProductsHeroSection() {
+  const { ref, inView } = useInView(0.1);
+
+  return (
+    <section
+      className="relative pt-40 pb-24 px-12 overflow-hidden"
+      style={{ background: "var(--hero-gradient)" }}
+    >
+      {/* Decorative ring — top right */}
+      <div
+        className="absolute top-[8%] right-[6%] w-[320px] h-[320px] rounded-full animate-ring-float pointer-events-none"
+        style={{
+          border: "1px solid var(--ring-border)",
+          boxShadow: "var(--ring-shadow)",
+        }}
+      >
+        <div
+          className="absolute inset-5 rounded-full"
+          style={{ border: "1px solid var(--ring-inner-1)" }}
+        />
+        <div
+          className="absolute inset-[40px] rounded-full"
+          style={{ border: "1px solid var(--ring-inner-2)" }}
+        />
+      </div>
+
+      {/* Grid texture */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-[0.02]"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(0deg, var(--coffee-latte) 0px, transparent 1px, transparent 80px), repeating-linear-gradient(90deg, var(--coffee-latte) 0px, transparent 1px, transparent 80px)",
+        }}
+      />
+
+      <div ref={ref} className="relative z-10 max-w-[1280px] mx-auto">
+        <p
+          className={`inline-flex items-center gap-2.5 font-mono text-[0.72rem] tracking-[0.2em] uppercase mb-7 transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}
+          style={{ color: "var(--forest-sage)", transitionDelay: "100ms" }}
+        >
+          <span
+            className="block w-8 h-px"
+            style={{ background: "var(--forest-sage)" }}
+          />
+          Circular Innovations
+        </p>
+
+        <h1
+          className={`font-display font-semibold leading-[1.05] mb-7 transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+          style={{
+            fontSize: "clamp(2.8rem, 5.5vw, 5.2rem)",
+            color: "var(--text-primary)",
+            transitionDelay: "200ms",
+          }}
+        >
+          From Waste,
+          <br />
+          <em className="italic" style={{ color: "var(--coffee-latte)" }}>
+            Products
+          </em>{" "}
+          <span style={{ color: "var(--forest-sage)" }}>That Matter</span>
+        </h1>
+
+        <p
+          className={`text-[1rem] leading-[1.9] max-w-[500px] transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+          style={{ color: "var(--text-secondary)", transitionDelay: "320ms" }}
+        >
+          Every product in our catalog starts as spent coffee grounds — waste
+          that would otherwise end up in a landfill. We process, convert, and
+          certify each one for measurable environmental impact.
+        </p>
+      </div>
+    </section>
+  );
+}

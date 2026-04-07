@@ -24,14 +24,14 @@ export function buildWhatsAppOrderURL(
   phone: string,
   productName: string,
   qty: number,
-  total: number
+  total: number,
 ): string {
   const message = encodeURIComponent(
     `Halo Rebru! Saya ingin memesan:\n\n` +
-    `Produk : ${productName}\n` +
-    `Jumlah : ${qty}\n` +
-    `Total  : ${formatCurrency(total)}\n\n` +
-    `Mohon konfirmasi ketersediaan. Terima kasih 🌱`
+      `Produk : ${productName}\n` +
+      `Jumlah : ${qty}\n` +
+      `Total  : ${formatCurrency(total)}\n\n` +
+      `Mohon konfirmasi ketersediaan. Terima kasih 🌱`,
   );
   return `https://wa.me/${phone}?text=${message}`;
 }

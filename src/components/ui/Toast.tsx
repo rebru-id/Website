@@ -1,54 +1,35 @@
+// src/components/ui/Toast.tsx
 "use client";
-
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useState,
-  type ReactNode,
-} from "react";
-import { cn } from "@/lib/utils";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 interface ToastContextValue {
-  showToast: (msg: string, duration?: number) => void;
+  show: (msg: string, type?: "success" | "error") => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [visible, setVisible] = useState(false);
-  const [message, setMessage] = useState("");
+  const [toast, setToast] = useState<{ msg: string; type: string } | null>(
+    null,
+  );
 
-  const showToast = useCallback((msg: string, duration = 3000) => {
-    setMessage(msg);
-    setVisible(true);
-    setTimeout(() => setVisible(false), duration);
-  }, []);
+  const show = (msg: string, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={{ show }}>
       {children}
-      <div
-        className={cn(
-          "fixed bottom-8 right-8 z-60 flex items-center gap-2.5 px-5 py-3.5",
-          "rounded-md text-[0.85rem] transition-all duration-300",
-          "border",
-          visible
-            ? "opacity-100 translate-y-0"
-            : "opacity-0 translate-y-2.5 pointer-events-none",
-        )}
-        style={{
-          background: "var(--forest-dark)",
-          borderColor: "rgba(74,124,78,0.3)",
-          color: "var(--forest-mist)",
-        }}
-      >
-        <i
-          className="fas fa-check-circle"
-          style={{ color: "var(--forest-sage)" }}
-        />
-        {message}
-      </div>
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-[9999] px-5 py-3 rounded-md text-[0.85rem] font-mono tracking-wide
+          ${toast.type === "error" ? "bg-red-900/90 text-red-200" : "bg-forest-dark/95 text-forest-sage"}
+          border border-border-default backdrop-blur-md shadow-lg`}
+        >
+          {toast.msg}
+        </div>
+      )}
     </ToastContext.Provider>
   );
 }

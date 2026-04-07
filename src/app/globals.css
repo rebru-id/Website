@@ -341,6 +341,13 @@
              rounded-pill transition-all duration-300 cursor-pointer;
   }
 
+  .btn i {
+    vertical-align: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+  }
+
   .btn-md {
     @apply px-9 py-4;
   }
@@ -348,71 +355,152 @@
     @apply px-5 py-2.5;
   }
 
-  /* ── btn-primary ── */
+  /* ── btn-primary ──────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply btn btn-md;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1;
+    border-radius: 9999px;
+    transition: all 0.3s;
+    cursor: pointer;
+    padding: 1rem 2.25rem;
     background: linear-gradient(135deg, var(--coffee-warm), var(--coffee-mid));
     color: #f5efe6;
     border: 1px solid var(--border-strong);
   }
   .btn-primary:hover {
-    @apply -translate-y-0.5;
+    transform: translateY(-2px);
     border-color: var(--coffee-latte);
     box-shadow: 0 8px 32px rgba(74, 44, 26, 0.4);
   }
 
-  /* ── btn-ghost — theme-aware via CSS variables ── */
+  /* ── btn-ghost ─────────────────────────────────────────────────────────── */
   .btn-ghost {
-    @apply btn btn-md;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1;
+    border-radius: 9999px;
+    transition: all 0.3s;
+    cursor: pointer;
+    padding: 1rem 2.25rem;
     color: var(--btn-ghost-color);
-    border: 1px solid var(--btn-ghost-border);
+    border: 1.5px solid rgba(196, 149, 106, 0.55);
     background: transparent;
+  }
+  [data-theme="light"] .btn-ghost {
+    border-color: rgba(74, 44, 26, 0.45);
   }
   .btn-ghost:hover {
     color: var(--btn-ghost-hover-color);
-    border-color: var(--btn-ghost-hover-border);
+    border-color: rgba(196, 149, 106, 0.85);
     background-color: var(--btn-ghost-hover-bg);
   }
+  [data-theme="light"] .btn-ghost:hover {
+    border-color: rgba(74, 44, 26, 0.7);
+  }
 
-  /* ── btn-ghost-dark — untuk section dengan dark bg (CTA) ── */
+  /* ── btn-ghost-dark ────────────────────────────────────────────────────── */
   .btn-ghost-dark {
-    @apply btn btn-md;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1;
+    border-radius: 9999px;
+    transition: all 0.3s;
+    cursor: pointer;
+    padding: 1rem 2.25rem;
     color: var(--btn-ghost-dark-color);
-    border: 1px solid var(--btn-ghost-dark-border);
+    border: 1.5px solid rgba(200, 223, 201, 0.55);
     background: transparent;
   }
   .btn-ghost-dark:hover {
     color: var(--btn-ghost-dark-hover-color);
-    border-color: var(--btn-ghost-dark-hover-border);
+    border-color: rgba(200, 223, 201, 0.85);
     background-color: var(--btn-ghost-dark-hover-bg);
   }
 
-  /* ── btn-green ── */
+  /* ── btn-green ─────────────────────────────────────────────────────────── */
   .btn-green {
-    @apply btn btn-md;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    line-height: 1;
+    border-radius: 9999px;
+    transition: all 0.3s;
+    cursor: pointer;
+    padding: 1rem 2.25rem;
     background: linear-gradient(135deg, #1a3a1b, #0d1f0e);
     color: #f5efe6;
     border: 1px solid rgba(74, 124, 78, 0.35);
   }
   .btn-green:hover {
-    @apply -translate-y-0.5;
+    transform: translateY(-2px);
     box-shadow: 0 8px 28px rgba(45, 90, 46, 0.35);
+  }
+
+  /* ── btn-sm override ───────────────────────────────────────────────────── */
+  .btn-sm {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.82rem;
+  }
+
+  /* ── Icon alignment — override Font Awesome defaults ─────────────────── */
+  .btn-primary i,
+  .btn-primary svg,
+  .btn-ghost i,
+  .btn-ghost svg,
+  .btn-ghost-dark i,
+  .btn-ghost-dark svg,
+  .btn-green i,
+  .btn-green svg {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    line-height: 1;
+    position: relative;
+    top: -0.5px;
   }
 
   /* ── Section label & title ── */
   .section-label {
-    @apply font-mono text-[0.7rem] tracking-[0.25em] uppercase block;
+    font-family: var(--font-space-mono), monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    display: block;
     color: var(--forest-sage);
   }
 
   .section-title {
-    @apply font-display font-semibold leading-tight text-text-primary;
+    font-family: var(--font-cormorant), Georgia, serif;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-primary);
     font-size: clamp(2rem, 4vw, 3.2rem);
   }
 
   /* ── Card base ── */
   .card-base {
-    @apply rounded-lg transition-all duration-300;
+    border-radius: 0.5rem;
+    transition: all 0.3s;
     background: var(--bg-card);
     border: 1px solid var(--border-default);
   }
@@ -423,20 +511,31 @@
 
   /* ── Dashboard ── */
   .dash-stat-card {
-    @apply card-base rounded-md p-7;
+    border-radius: 0.625rem;
+    transition: all 0.3s;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    padding: 1.75rem;
   }
 
   .dash-table {
-    @apply w-full border-collapse;
+    width: 100%;
+    border-collapse: collapse;
   }
   .dash-table th {
-    @apply px-5 py-3.5 text-left font-mono text-[0.65rem] tracking-[0.15em] uppercase;
+    padding: 0.875rem 1.25rem;
+    text-align: left;
+    font-family: var(--font-space-mono), monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
     color: var(--text-muted);
     background: var(--bg-card);
     border-bottom: 1px solid var(--border-subtle);
   }
   .dash-table td {
-    @apply px-5 py-3.5 text-[0.88rem];
+    padding: 0.875rem 1.25rem;
+    font-size: 0.88rem;
     color: var(--text-secondary);
     border-bottom: 1px solid var(--border-subtle);
   }
@@ -449,7 +548,11 @@
 
   /* ── Status pills ── */
   .status-pill {
-    @apply inline-block px-2.5 py-0.5 rounded-pill text-[0.68rem] tracking-[0.08em];
+    display: inline-block;
+    padding: 0.125rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
   }
   .status-pending {
     background: rgba(200, 168, 75, 0.15);
@@ -470,8 +573,12 @@
 
   /* ── Theme toggle ── */
   .theme-toggle {
-    @apply flex items-center justify-center rounded-full
-           transition-all duration-300 flex-shrink-0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    transition: all 0.3s;
+    flex-shrink: 0;
     width: 26px;
     height: 26px;
     border: 1px solid var(--border-default);
@@ -488,11 +595,9 @@
     height: 13px;
     stroke-width: 1.8;
   }
-
   .theme-toggle.sun {
     color: var(--icon-sun);
   }
-
   .theme-toggle.moon {
     color: var(--icon-moon);
   }
