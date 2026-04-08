@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { buildWhatsAppOrderURL, formatCurrency } from "@/lib/utils"; // ✅ FIXED: nama fungsi & tambah formatCurrency
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Config — ganti dengan nomor WhatsApp bisnis yang sesungguhnya
-// ─────────────────────────────────────────────────────────────────────────────
-const WHATSAPP_PHONE = "6285237390994"; // TODO Sprint 4: pindahkan ke env / Supabase config
+import { formatCurrency, cn, slugify } from "@/utils";
+import { useCart } from "@/context/CartContext";
+import { useToast } from "../ui/Toast";
 
 function useInView(threshold = 0.1) {
   const ref = useRef<HTMLDivElement>(null);
@@ -109,19 +106,21 @@ export default function ProductsFeaturedSection() {
   const { ref, inView } = useInView(0.08);
   const [qty, setQty] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(BIOCHAR.variants[0]);
+  const { addItem } = useCart();
 
   const totalPrice = BIOCHAR.price * qty;
-
-  // ✅ FIXED: gunakan formatCurrency dari utils (konsisten dengan IDR formatter)
   const formatted = formatCurrency(totalPrice);
 
-  // ✅ FIXED: gunakan buildWhatsAppOrderURL — serahkan pembuatan pesan ke utils
-  const waURL = buildWhatsAppOrderURL(
-    WHATSAPP_PHONE,
-    `${BIOCHAR.name} (${selectedVariant})`,
-    qty,
-    totalPrice,
-  );
+  function handleAddToCart() {
+    addItem({
+      product_id: BIOCHAR.id,
+      name: BIOCHAR.name,
+      variant: selectedVariant,
+      price: BIOCHAR.price,
+      qty,
+      accent: "var(--coffee-latte)",
+    });
+  }
 
   return (
     <section
@@ -340,16 +339,13 @@ export default function ProductsFeaturedSection() {
                 </button>
               </div>
 
-              {/* ✅ FIXED: href sekarang pakai waURL dari buildWhatsAppOrderURL */}
-              <a
-                href={waURL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={handleAddToCart}
                 className="btn-primary flex-1 justify-center"
               >
-                <i className="fab fa-whatsapp" />
-                Order · {formatted}
-              </a>
+                <i className="fas fa-cart-plus" />
+                Add to Cart · {formatted}
+              </button>
             </div>
 
             {/* Accordion */}

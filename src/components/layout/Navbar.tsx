@@ -4,10 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { cn } from "@/utils";
 import { useLogo } from "@/hooks/useLogo";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { NAV_LINKS, CONTACT_HREF, CONTACT_LABEL } from "@/constants/navigation";
+import CartButton from "@/components/cart/CartButton";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -115,6 +116,7 @@ export default function Navbar() {
             >
               <i className={cn("fas", mobileOpen ? "fa-times" : "fa-bars")} />
             </button>
+            <CartButton />
           </div>
         </div>
       </header>

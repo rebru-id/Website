@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/utils";
 import { useAuthModal, type SessionState } from "./AuthModalContext";
 import { type UserRole } from "@/types";
 

@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { buildWhatsAppOrderURL, formatCurrency } from "@/lib/utils"; // ✅ FIXED: nama fungsi & tambah formatCurrency
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Config — ganti dengan nomor WhatsApp bisnis yang sesungguhnya
-// ─────────────────────────────────────────────────────────────────────────────
-const WHATSAPP_PHONE = "6285237390994"; // TODO Sprint 4: pindahkan ke env / Supabase config
+import { formatCurrency, cn, slugify } from "@/utils";
+import { useCart } from "@/context/CartContext";
+import { useToast } from "../ui/Toast";
 
 function useInView(threshold = 0.08) {
   const ref = useRef<HTMLDivElement>(null);
@@ -183,18 +180,19 @@ function ProductCard({
     ? formatCurrency(product.price * qty)
     : "Hubungi Kami";
 
-  // ✅ FIXED: gunakan buildWhatsAppOrderURL untuk produk yang ada harga
-  //           produk R&D tetap pakai URL manual karena pesan berbeda
-  const waURL = product.price
-    ? buildWhatsAppOrderURL(
-        WHATSAPP_PHONE,
-        `${product.name}${selectedVariant ? ` (${selectedVariant})` : ""}`,
-        qty,
-        product.price * qty,
-      )
-    : `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(
-        `Halo Rebru! Saya tertarik dengan produk ${product.name} yang sedang dalam R&D. Boleh minta informasi lebih lanjut?`,
-      )}`;
+  const { addItem } = useCart();
+
+  function handleAddToCart() {
+    if (!product.price) return;
+    addItem({
+      product_id: product.id,
+      name: product.name,
+      variant: selectedVariant,
+      price: product.price,
+      qty: qty,
+      accent: product.accent,
+    });
+  }
 
   return (
     <div
@@ -354,20 +352,21 @@ function ProductCard({
           )}
 
           {/* ✅ FIXED: href sekarang pakai waURL dari buildWhatsAppOrderURL */}
-          <a
-            href={waURL}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={handleAddToCart}
+            disabled={isRnD}
             className="flex-1 inline-flex items-center justify-center gap-2.5 py-3 rounded-pill font-mono text-[0.72rem] tracking-[0.1em] uppercase transition-all duration-300"
             style={{
               background: isRnD ? "transparent" : product.accentBg,
               border: `1px solid ${product.accentBorder}`,
               color: product.accent,
+              opacity: isRnD ? 0.5 : 1,
+              cursor: isRnD ? "not-allowed" : "pointer",
             }}
           >
-            <i className="fab fa-whatsapp" />
-            {isRnD ? "Tanya R&D" : `Order · ${formatted}`}
-          </a>
+            <i className={`fas ${isRnD ? "fa-flask" : "fa-cart-plus"}`} />
+            {isRnD ? "Coming Soon" : `Add to Cart · ${formatted}`}
+          </button>
         </div>
 
         {/* Accordion */}

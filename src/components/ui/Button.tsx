@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/utils";
 import { buttonVariants, type ButtonVariants } from "@/lib/cva";
 import Link from "next/link";
 
