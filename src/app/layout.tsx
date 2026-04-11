@@ -27,6 +27,9 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
+  icons: {
+    icon: "/favicon.ico",
+  },
   title: {
     default: "Rebru — Brewing Scalable Impact From Coffee Waste",
     template: "%s | Rebru",

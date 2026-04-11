@@ -1,26 +1,32 @@
-import Navbar from "@/components/layout/Navbar";
-import Footer  from "@/components/layout/Footer";
-import AuthModal        from "@/components/dashboard/AuthModal";
-import DashboardOverlay from "@/components/dashboard/DashboardOverlay";
+import Navbar            from "@/components/layout/Navbar";
+import Footer            from "@/components/layout/Footer";
+import AuthModal         from "@/components/dashboard/AuthModal";
+import DashboardOverlay  from "@/components/dashboard/DashboardOverlay";
 
-export default function Page() {
+import BlogHeroSection     from "@/components/sections/BlogHeroSection";
+import BlogFeaturedSection from "@/components/sections/BlogFeaturedSection";
+import BlogGridSection     from "@/components/sections/BlogGridSection";
+import BlogImpactSection   from "@/components/sections/BlogImpactSection";
+import CtaBannerSection    from "@/components/sections/CtaBannerSection";
+
+export const metadata = {
+  title: "Blog — Rebru",
+  description:
+    "Stories, science, and insights from Rebru — Indonesia's circular economy platform built on coffee waste.",
+};
+
+export default function BlogPage() {
   return (
     <>
       <AuthModal />
       <DashboardOverlay />
       <Navbar />
-      <main className="min-h-screen flex items-center justify-center pt-24 px-12">
-        <div className="text-center">
-          <span className="font-mono text-[0.7rem] tracking-[0.2em] uppercase text-forest-sage block mb-4">
-            Coming Soon
-          </span>
-          <h1 className="font-display text-[3rem] font-semibold text-coffee-foam capitalize">
-            Page
-          </h1>
-          <p className="text-ink-dim mt-4 text-[0.95rem]">
-            This page will be built in the next sprint.
-          </p>
-        </div>
+      <main>
+        <BlogHeroSection />
+        <BlogFeaturedSection />
+        <BlogGridSection />
+        <BlogImpactSection />
+        <CtaBannerSection />
       </main>
       <Footer />
     </>

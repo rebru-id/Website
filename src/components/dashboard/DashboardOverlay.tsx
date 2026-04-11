@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { cn } from "@/utils";
+import BlogManagementTab from "@/components/dashboard/BlogManagementTab";
 import { useState } from "react";
 import { useAuthModal } from "./AuthModalContext";
 import { useLogo } from "@/hooks/useLogo";
@@ -23,6 +24,7 @@ const TABS_BY_ROLE: Record<UserRole, Tab[]> = {
     { id: "waste", label: "Waste Log", icon: "fa-recycle" },
     { id: "partners", label: "Partners", icon: "fa-handshake" },
     { id: "esg", label: "ESG", icon: "fa-chart-bar" },
+    { id: "blog", label: "Blog", icon: "fa-newspaper" },
     { id: "reports", label: "Reports", icon: "fa-file-download" },
   ],
   mitra: [
@@ -212,6 +214,8 @@ function TabContent({ tabId, role }: { tabId: string; role: UserRole }) {
           ))}
         </>
       );
+    case "blog":
+      return <BlogManagementTab />;
     case "reports":
       return (
         <>
