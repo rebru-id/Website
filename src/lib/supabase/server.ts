@@ -7,7 +7,14 @@ import { cookies } from "next/headers";
 type CookieToSet = {
   name: string;
   value: string;
-  options?: CookieOptions;
+  options?: {
+    path?: string;
+    domain?: string;
+    maxAge?: number;
+    secure?: boolean;
+    httpOnly?: boolean;
+    sameSite?: "lax" | "strict" | "none";
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,7 +39,7 @@ export async function createClient() {
               cookieStore.set(name, value, options),
             );
           } catch {
-            // Server Component — cookies can't be set, ignore
+            // Server Component —ignore
           }
         },
       },
