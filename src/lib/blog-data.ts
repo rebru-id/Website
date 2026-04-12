@@ -3,6 +3,7 @@
 // Sprint 3+: replace dengan Supabase query ke tabel `blog_posts`
 // ─────────────────────────────────────────────────────────────────────────────
 
+// src/lib/blog-data.ts
 export type BlogCategory =
   | "all"
   | "coffee-waste"
@@ -30,8 +31,14 @@ export type ContentBlock =
   | { type: "paragraph"; text: string }
   | { type: "quote"; text: string }
   | { type: "impact-box"; items: string[] }
-  | { type: "process-steps"; steps: { icon: string; label: string; desc: string }[] }
-  | { type: "product-list"; items: { name: string; icon: string; desc: string }[] }
+  | {
+      type: "process-steps";
+      steps: { icon: string; label: string; desc: string }[];
+    }
+  | {
+      type: "product-list";
+      items: { name: string; icon: string; desc: string }[];
+    }
   | { type: "divider" };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,12 +46,12 @@ export type ContentBlock =
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CATEGORIES: { id: BlogCategory; label: string }[] = [
-  { id: "all",                label: "All" },
-  { id: "coffee-waste",       label: "Coffee Waste" },
-  { id: "climate-impact",     label: "Climate Impact" },
+  { id: "all", label: "All" },
+  { id: "coffee-waste", label: "Coffee Waste" },
+  { id: "climate-impact", label: "Climate Impact" },
   { id: "behind-the-process", label: "Behind The Process" },
-  { id: "esg-partnership",    label: "ESG & Partnership" },
-  { id: "product-insights",   label: "Product Insights" },
+  { id: "esg-partnership", label: "ESG & Partnership" },
+  { id: "product-insights", label: "Product Insights" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +62,8 @@ export const BLOG_POSTS: BlogPost[] = [
   // ── 1. FEATURED — full content ──────────────────────────────────────────
   {
     slug: "coffee-waste-to-climate-impact",
-    title: "How 1300+ kg of Coffee Waste is Transformed into Climate-Positive Solutions",
+    title:
+      "How 1300+ kg of Coffee Waste is Transformed into Climate-Positive Solutions",
     excerpt:
       "What happens after your coffee is finished? At Rebru, it doesn't end as waste. We collect, process, and transform it into sustainable materials that reduce carbon impact and support circular economy systems.",
     category: "climate-impact",
@@ -142,10 +150,26 @@ export const BLOG_POSTS: BlogPost[] = [
       {
         type: "product-list",
         items: [
-          { name: "Biochar", icon: "fa-seedling", desc: "Sequesters carbon for centuries while improving soil health and water retention." },
-          { name: "Compost", icon: "fa-leaf", desc: "Returns nutrients to the agricultural cycle, reducing need for synthetic fertilizers." },
-          { name: "Bio-briquettes", icon: "fa-fire", desc: "Replaces coal and wood charcoal with a cleaner, carbon-neutral energy source." },
-          { name: "Raw Materials", icon: "fa-flask", desc: "Biodegradable packaging and structural materials. Currently in R&D phase." },
+          {
+            name: "Biochar",
+            icon: "fa-seedling",
+            desc: "Sequesters carbon for centuries while improving soil health and water retention.",
+          },
+          {
+            name: "Compost",
+            icon: "fa-leaf",
+            desc: "Returns nutrients to the agricultural cycle, reducing need for synthetic fertilizers.",
+          },
+          {
+            name: "Bio-briquettes",
+            icon: "fa-fire",
+            desc: "Replaces coal and wood charcoal with a cleaner, carbon-neutral energy source.",
+          },
+          {
+            name: "Raw Materials",
+            icon: "fa-flask",
+            desc: "Biodegradable packaging and structural materials. Currently in R&D phase.",
+          },
         ],
       },
       {
@@ -268,6 +292,6 @@ export function getRelatedPosts(slug: string, limit = 3): BlogPost[] {
   const post = getPostBySlug(slug);
   if (!post) return [];
   return BLOG_POSTS.filter(
-    (p) => p.slug !== slug && p.category === post.category
+    (p) => p.slug !== slug && p.category === post.category,
   ).slice(0, limit);
 }
