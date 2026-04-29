@@ -8,23 +8,28 @@ Stack: **Next.js 14 (App Router) · TypeScript · Tailwind CSS · Supabase**
 ## 🚀 Quick Start
 
 ### 1. Install dependencies
+
 ```bash
 npm install
 ```
 
 ### 2. Setup environment variables
+
 Salin file `.env.local` dan isi dengan kredensial Supabase kamu:
+
 ```bash
 cp .env.local .env.local
 ```
 
 Isi nilai berikut (dapatkan dari https://supabase.com → Project Settings → API):
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 ```
 
 ### 3. Jalankan development server
+
 ```bash
 npm run dev
 ```
@@ -83,12 +88,13 @@ src/
 
 ## 🔐 Dashboard Login (Mock — sebelum Supabase terhubung)
 
-| Email            | Password   | Role              |
-|-----------------|------------|-------------------|
-| admin@rebru.id  | rebru2025  | Admin             |
-| mitra@rebru.id  | mitra123   | Mitra             |
-| gov@rebru.id    | gov123     | Government        |
-| multi@rebru.id  | multi123   | Admin + Mitra     |
+| Email              | Password  | Role          |
+| ------------------ | --------- | ------------- |
+| admin@rebru.id     | rebru2025 | Admin         |
+| mitra@rebru.id     | mitra123  | Mitra         |
+| gov@rebru.id       | gov123    | Government    |
+| multi@rebru.id     | multi123  | Admin + Mitra |
+| collector@rebru.id | rebru2025 | Collector     |
 
 Dashboard diakses via **icon kunci (🔒)** di pojok kanan footer.
 
@@ -97,6 +103,7 @@ Dashboard diakses via **icon kunci (🔒)** di pojok kanan footer.
 ## 🗄️ Supabase Integration
 
 ### Tables yang perlu dibuat:
+
 - `user_profiles` — role, name, phone
 - `partner_applications` — dari form Get in Touch
 - `mitra` — partner aktif
@@ -108,10 +115,12 @@ Dashboard diakses via **icon kunci (🔒)** di pojok kanan footer.
 - `contact_messages` — pesan kontak
 
 ### Views yang perlu dibuat:
+
 - `global_stats` — aggregasi untuk impact counter homepage
 - `monthly_recap` — untuk dashboard chart
 
 ### Cara connect:
+
 1. Uncomment kode di `src/components/sections/ImpactSection.tsx`
 2. Ganti mock login di `src/components/dashboard/AuthModal.tsx` dengan Supabase Auth
 3. Isi `.env.local` dengan kredensial project kamu
@@ -136,11 +145,11 @@ git push -u origin main
 
 ## ✅ Sprint Roadmap
 
-| Sprint | Scope |
-|--------|-------|
-| ✅ Sprint 1 | Homepage + Layout + Dashboard (mock) |
-| 🔜 Sprint 2 | About, Products, Blog, Contact pages |
-| 🔜 Sprint 3 | Supabase Auth + real login + user_profiles |
-| 🔜 Sprint 4 | Commerce (cart + WA checkout) |
+| Sprint      | Scope                                            |
+| ----------- | ------------------------------------------------ |
+| ✅ Sprint 1 | Homepage + Layout + Dashboard (mock)             |
+| 🔜 Sprint 2 | About, Products, Blog, Contact pages             |
+| 🔜 Sprint 3 | Supabase Auth + real login + user_profiles       |
+| 🔜 Sprint 4 | Commerce (cart + WA checkout)                    |
 | 🔜 Sprint 5 | Supply flow (waste_collections + bioconversions) |
-| 🔜 Sprint 6 | Live impact data + monthly_recap charts |
+| 🔜 Sprint 6 | Live impact data + monthly_recap charts          |
