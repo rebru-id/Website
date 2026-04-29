@@ -1,3 +1,4 @@
+// src/components/sections/BlogTeaserSection.tsx
 import Link from "next/link";
 
 const POSTS = [
@@ -31,10 +32,13 @@ export default function BlogTeaserSection() {
   const secondaries = POSTS.slice(1);
 
   return (
-    <section id="blog-teaser" className="max-w-[1280px] mx-auto px-12 py-24">
+    <section
+      id="blog-teaser"
+      className="max-w-[1280px] mx-auto px-12 py-[var(--section-py)]"
+    >
+      {" "}
       <span className="section-label mb-3">Insights</span>
       <h2 className="section-title mb-12">From Our Blog</h2>
-
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-7">
         {/* Featured */}
         <Link

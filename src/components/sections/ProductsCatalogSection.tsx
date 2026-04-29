@@ -1,161 +1,28 @@
+// src/components/sections/ProductsCatalogSection.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { formatCurrency, cn, slugify } from "@/utils";
 import { useCart } from "@/context/CartContext";
-import { useToast } from "../ui/Toast";
+import { useToast } from "@/components/ui/Toast";
+import { useInView } from "@/hooks/useInView";
+import { AccordionItem } from "@/components/ui/Accordion";
+import type { UIProduct } from "@/types";
 
-function useInView(threshold = 0.08) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setInView(true);
-          observer.disconnect();
-        }
-      },
-      { threshold },
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [threshold]);
-  return { ref, inView };
-}
+import { getCatalogByCategory } from "@/lib/products";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mock product data — Supabase-ready (Sprint 4: connect to `products` table)
+// Tab definitions — tambah entry baru di sini untuk kategori baru
 // ─────────────────────────────────────────────────────────────────────────────
-const CATALOG_PRODUCTS = [
-  {
-    id: "compost-001",
-    name: "Compost",
-    tagline:
-      "Ampas kopi yang biasanya terbuang bisa menjadi sumber nutrisi berharga bagi tanah.",
-    price: 25000,
-    unit: "kg",
-    icon: "fa-leaf",
-    accent: "var(--forest-sage)",
-    accentBg: "rgba(122,171,126,0.08)",
-    accentBorder: "rgba(122,171,126,0.2)",
-    badge: null,
-    variants: ["1 Kg", "5 Kg", "10 Kg"],
-    specs: {
-      beratBersih: "1000 gram (1 Kg)",
-      bahan:
-        "Ampas kopi terfermentasi, dicampur sisa organik restoran dan bahan pendukung kompos.",
-      fitur: [
-        "Kaya Nitrogen & Mikroba Tanah",
-        "Memperbaiki Struktur Tanah",
-        "100% Organik",
-      ],
-    },
-    impact: {
-      stat: "1 Kg Compost",
-      value: "menyelamatkan ~600g ampas kopi dari TPA",
-      icon: "fa-seedling",
-    },
-  },
-  {
-    id: "briquette-001",
-    name: "Bio-briquettes",
-    tagline:
-      "Rebru menghadirkan briket ramah lingkungan sebagai alternatif energi terbarukan.",
-    price: 20000,
-    unit: "kg",
-    icon: "fa-fire",
-    accent: "#d4783a",
-    accentBg: "rgba(212,120,58,0.08)",
-    accentBorder: "rgba(212,120,58,0.2)",
-    badge: null,
-    variants: ["1 Kg", "5 Kg"],
-    specs: {
-      beratBersih: "1000 gram (1 Kg)",
-      bahan:
-        "Ampas kopi dipadatkan dengan pengikat alami, bebas bahan kimia sintetis.",
-      fitur: [
-        "Pembakaran Lebih Bersih",
-        "Kalori Tinggi",
-        "Asap Minimal",
-        "Pengganti Arang Kayu",
-      ],
-    },
-    impact: {
-      stat: "1 Kg Bio-briquettes",
-      value: "menggantikan ~0.8 Kg arang kayu konvensional",
-      icon: "fa-fire",
-    },
-  },
-  {
-    id: "rawmat-001",
-    name: "Raw Materials",
-    tagline:
-      "Biodegradable cups, blocks, and sustainable packaging prototypes from compressed coffee waste.",
-    price: null,
-    unit: null,
-    icon: "fa-flask",
-    accent: "#c8a84b",
-    accentBg: "rgba(200,168,75,0.07)",
-    accentBorder: "rgba(200,168,75,0.2)",
-    badge: "In R&D",
-    variants: [],
-    specs: {
-      beratBersih: "—",
-      bahan:
-        "Ampas kopi terkompresi dengan polimer biodegradable. Masih dalam tahap pengembangan dan uji material.",
-      fitur: [
-        "Gelas Biodegradable",
-        "Blok Bangunan Ringan",
-        "Packaging Sustainable",
-      ],
-    },
-    impact: {
-      stat: "Target",
-      value: "mengalihkan 100% sisa padat dari produksi biochar",
-      icon: "fa-flask",
-    },
-  },
-];
+const TABS = [
+  { key: "all", label: "All" },
+  { key: "soil-amendment", label: "Soil" },
+  { key: "energy", label: "Energy" },
+  { key: "ecogoods", label: "EcoGoods" },
+  { key: "raw-materials", label: "R&D" },
+] as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Accordion
-// ─────────────────────────────────────────────────────────────────────────────
-function AccordionItem({
-  title,
-  children,
-  accent,
-}: {
-  title: string;
-  children: React.ReactNode;
-  accent: string;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="border-b" style={{ borderColor: "var(--border-subtle)" }}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between py-3.5 text-left"
-      >
-        <span
-          className="font-mono text-[0.68rem] tracking-[0.15em] uppercase"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          {title}
-        </span>
-        <i
-          className={`fas fa-chevron-down text-[0.6rem] transition-transform duration-300 ${open ? "rotate-180" : ""}`}
-          style={{ color: "var(--text-muted)" }}
-        />
-      </button>
-      <div
-        className={`overflow-hidden transition-all duration-400 ${open ? "max-h-[320px] pb-4" : "max-h-0"}`}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
+type TabKey = (typeof TABS)[number]["key"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Product Card
@@ -165,33 +32,39 @@ function ProductCard({
   index,
   inView,
 }: {
-  product: (typeof CATALOG_PRODUCTS)[number];
+  product: UIProduct;
   index: number;
   inView: boolean;
 }) {
   const [qty, setQty] = useState(1);
+  // selectedVariant sekarang objek { label, price } — null untuk produk R&D tanpa varian
   const [selectedVariant, setSelectedVariant] = useState(
-    product.variants[0] ?? "",
+    product.variants[0] ?? null,
   );
   const isRnD = product.badge === "In R&D";
 
-  // ✅ FIXED: gunakan formatCurrency untuk konsistensi format IDR
-  const formatted = product.price
-    ? formatCurrency(product.price * qty)
+  // Harga dihitung dari varian yang dipilih, bukan harga flat produk
+  const activePrice = selectedVariant ? selectedVariant.price : product.price;
+  const formatted = activePrice
+    ? formatCurrency(activePrice * qty)
     : "Hubungi Kami";
 
   const { addItem } = useCart();
+  const toast = useToast();
 
   function handleAddToCart() {
-    if (!product.price) return;
+    if (!selectedVariant || !activePrice) return;
     addItem({
       product_id: product.id,
       name: product.name,
-      variant: selectedVariant,
-      price: product.price,
+      variant: selectedVariant.label,
+      price: selectedVariant.price, // ✅ harga aktual varian yang dipilih
       qty: qty,
       accent: product.accent,
     });
+    toast.show(
+      `${product.name} · ${selectedVariant.label} ditambahkan ke keranjang`,
+    );
   }
 
   return (
@@ -269,40 +142,40 @@ function ProductCard({
             <div className="flex flex-wrap gap-2">
               {product.variants.map((v) => (
                 <button
-                  key={v}
+                  key={v.label}
                   onClick={() => setSelectedVariant(v)}
                   className="px-3.5 py-1.5 rounded-pill font-mono text-[0.68rem] tracking-[0.1em] transition-all duration-200"
                   style={{
                     border:
-                      selectedVariant === v
+                      selectedVariant?.label === v.label
                         ? `1px solid ${product.accent}`
                         : "1px solid var(--border-default)",
                     background:
-                      selectedVariant === v
+                      selectedVariant?.label === v.label
                         ? `${product.accentBg}`
                         : "transparent",
                     color:
-                      selectedVariant === v
+                      selectedVariant?.label === v.label
                         ? product.accent
                         : "var(--text-muted)",
                   }}
                 >
-                  {v}
+                  {v.label}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Price — ✅ FIXED: gunakan formatCurrency */}
+        {/* Price — ditampilkan per varian yang dipilih */}
         <div className="flex items-baseline gap-2 mb-5">
-          {product.price ? (
+          {activePrice ? (
             <>
               <span
                 className="font-display font-semibold text-[1.6rem]"
                 style={{ color: product.accent }}
               >
-                {formatCurrency(product.price)}
+                {formatCurrency(activePrice)}
               </span>
               <span
                 className="font-mono text-[0.65rem] tracking-[0.1em] uppercase"
@@ -321,52 +194,124 @@ function ProductCard({
           )}
         </div>
 
-        {/* Qty + CTA */}
-        <div className="flex items-center gap-3 mb-7">
-          {!isRnD && (
-            <div
-              className="flex items-center rounded-pill overflow-hidden flex-shrink-0"
-              style={{ border: "1px solid var(--border-default)" }}
+        {/* ── Unified Split-Button — card size ────────────────────────────
+            Warna: forest-sage brand color (bukan per-product accent) agar
+            grid 3-kolom terasa kohesif — accent tetap dipakai di price,
+            badge, variant selector, dan accordion. Hanya CTA yang disamakan.
+
+            R&D: full-width ghost button (tidak ada stepper).
+        ─────────────────────────────────────────────────────────────── */}
+        <div className="mb-7">
+          {isRnD ? (
+            /* ── R&D: ghost pill full-width ── */
+            <button
+              disabled
+              className="btn btn-md w-full justify-center"
+              style={{
+                background: "transparent",
+                border: "1px solid var(--border-default)",
+                color: "var(--text-muted)",
+                cursor: "not-allowed",
+                opacity: 0.5,
+              }}
             >
+              <i className="fas fa-flask text-[0.8rem]" />
+              Coming Soon
+            </button>
+          ) : (
+            /* ── Active: split-button pill ── */
+            <div
+              className="flex items-stretch rounded-pill overflow-hidden"
+              style={{
+                border: "1.5px solid var(--forest-sage)",
+                transition: "box-shadow 0.25s ease, transform 0.25s ease",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.boxShadow =
+                  "0 6px 24px rgba(45,90,46,0.25)";
+                (e.currentTarget as HTMLDivElement).style.transform =
+                  "translateY(-2px)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
+                (e.currentTarget as HTMLDivElement).style.transform =
+                  "translateY(0)";
+              }}
+            >
+              {/* Qty stepper — transparan kiri */}
+              <div className="flex items-center flex-shrink-0">
+                <button
+                  onClick={() => setQty(Math.max(1, qty - 1))}
+                  className="w-9 h-10 flex items-center justify-center transition-colors duration-200"
+                  style={{
+                    color:
+                      qty <= 1
+                        ? "var(--border-strong)"
+                        : "var(--text-secondary)",
+                    cursor: qty <= 1 ? "not-allowed" : "pointer",
+                  }}
+                  aria-label="Kurangi jumlah"
+                >
+                  <i className="fas fa-minus text-[0.55rem]" />
+                </button>
+                <span
+                  className="w-7 text-center font-mono text-[0.82rem] select-none"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {qty}
+                </span>
+                <button
+                  onClick={() => setQty(qty + 1)}
+                  className="w-9 h-10 flex items-center justify-center transition-colors duration-200"
+                  style={{
+                    color:
+                      qty >= 99
+                        ? "var(--border-strong)"
+                        : "var(--text-secondary)",
+                    cursor: qty >= 99 ? "not-allowed" : "pointer",
+                  }}
+                  aria-label="Tambah jumlah"
+                >
+                  <i className="fas fa-plus text-[0.55rem]" />
+                </button>
+              </div>
+
+              {/* Divider */}
+              <div
+                className="w-px self-stretch flex-shrink-0"
+                style={{ background: "var(--forest-sage)", opacity: 0.45 }}
+              />
+
+              {/* CTA — forest-dark fill, cream text */}
               <button
-                onClick={() => setQty(Math.max(1, qty - 1))}
-                className="w-9 h-10 flex items-center justify-center"
-                style={{ color: "var(--text-secondary)" }}
+                onClick={handleAddToCart}
+                className="flex-1 flex items-center justify-center gap-2 px-4 font-mono text-[0.66rem] tracking-[0.1em] uppercase transition-colors duration-250"
+                style={{
+                  background: "var(--forest-dark, rgba(13,31,14,0.92))",
+                  color: "var(--forest-mist, #c8dfc9)",
+                  minHeight: "40px",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    "var(--forest-moss)";
+                  (e.currentTarget as HTMLButtonElement).style.color =
+                    "#f5efe6";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    "var(--forest-dark, rgba(13,31,14,0.92))";
+                  (e.currentTarget as HTMLButtonElement).style.color =
+                    "var(--forest-mist, #c8dfc9)";
+                }}
               >
-                <i className="fas fa-minus text-[0.6rem]" />
-              </button>
-              <span
-                className="w-8 text-center font-mono text-[0.85rem]"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {qty}
-              </span>
-              <button
-                onClick={() => setQty(qty + 1)}
-                className="w-9 h-10 flex items-center justify-center"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                <i className="fas fa-plus text-[0.6rem]" />
+                <i className="fas fa-bag-shopping text-[0.78rem]" />
+                Add to Cart
+                <span className="hidden lg:inline opacity-70 font-normal">
+                  · {formatted}
+                </span>
               </button>
             </div>
           )}
-
-          {/* ✅ FIXED: href sekarang pakai waURL dari buildWhatsAppOrderURL */}
-          <button
-            onClick={handleAddToCart}
-            disabled={isRnD}
-            className="flex-1 inline-flex items-center justify-center gap-2.5 py-3 rounded-pill font-mono text-[0.72rem] tracking-[0.1em] uppercase transition-all duration-300"
-            style={{
-              background: isRnD ? "transparent" : product.accentBg,
-              border: `1px solid ${product.accentBorder}`,
-              color: product.accent,
-              opacity: isRnD ? 0.5 : 1,
-              cursor: isRnD ? "not-allowed" : "pointer",
-            }}
-          >
-            <i className={`fas ${isRnD ? "fa-flask" : "fa-cart-plus"}`} />
-            {isRnD ? "Coming Soon" : `Add to Cart · ${formatted}`}
-          </button>
         </div>
 
         {/* Accordion */}
@@ -379,17 +324,17 @@ function ProductCard({
               className="text-[0.85rem]"
               style={{ color: "var(--text-secondary)" }}
             >
-              {product.specs.beratBersih}
+              {product.specs?.beratBersih}
             </p>
           </AccordionItem>
 
           <AccordionItem title="Spesifikasi & Bahan" accent={product.accent}>
             <div className="flex flex-col gap-2.5 text-[0.85rem]">
               <p style={{ color: "var(--text-secondary)" }}>
-                {product.specs.bahan}
+                {product.specs?.bahan}
               </p>
               <ul className="flex flex-col gap-1.5 mt-1">
-                {product.specs.fitur.map((f) => (
+                {product.specs?.fitur?.map((f) => (
                   <li key={f} className="flex items-start gap-2">
                     <span
                       className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -411,7 +356,7 @@ function ProductCard({
               }}
             >
               <i
-                className={`fas ${product.impact.icon} text-[0.78rem] mt-0.5`}
+                className={`fas ${product.impact?.icon} text-[0.78rem] mt-0.5`}
                 style={{ color: product.accent }}
               />
               <p
@@ -419,9 +364,9 @@ function ProductCard({
                 style={{ color: "var(--text-secondary)" }}
               >
                 <strong style={{ color: product.accent }}>
-                  {product.impact.stat}
+                  {product.impact?.stat}
                 </strong>{" "}
-                {product.impact.value}
+                {product.impact?.value}
               </p>
             </div>
           </AccordionItem>
@@ -435,7 +380,12 @@ function ProductCard({
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ProductsCatalogSection() {
-  const { ref, inView } = useInView(0.06);
+  const { ref: headerRef, inView: headerInView } = useInView(0.06);
+  const { ref: gridRef, inView: gridInView } = useInView(0.04);
+
+  // ── Tab filter state ──
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
+  const filteredProducts = getCatalogByCategory(activeTab);
 
   return (
     <section
@@ -454,10 +404,10 @@ export default function ProductsCatalogSection() {
         }}
       />
 
-      <div ref={ref} className="relative z-10 max-w-[1280px] mx-auto">
+      <div ref={headerRef} className="relative z-10 max-w-[1280px] mx-auto">
         {/* Header */}
         <div
-          className={`mb-14 transition-all duration-700 ${inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}
+          className={`mb-10 transition-all duration-700 ${headerInView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}
         >
           <p className="section-label mb-4">More Products</p>
           <div className="flex items-end justify-between flex-wrap gap-4">
@@ -466,26 +416,79 @@ export default function ProductsCatalogSection() {
               className="font-mono text-[0.68rem] tracking-[0.15em] uppercase"
               style={{ color: "var(--text-muted)" }}
             >
-              {CATALOG_PRODUCTS.length} products · 1 in R&D
+              {filteredProducts.length} products
             </p>
           </div>
         </div>
 
+        {/* ── Tab Filter ── */}
+        <div
+          className={`flex items-center gap-2 flex-wrap mb-10 transition-all duration-700 ${headerInView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
+          style={{ transitionDelay: "100ms" }}
+        >
+          {TABS.map((tab) => {
+            const count = getCatalogByCategory(tab.key).length;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className="flex items-center gap-2 px-4 py-2 rounded-pill font-mono text-[0.68rem] tracking-[0.1em] uppercase transition-all duration-200"
+                style={{
+                  background: isActive
+                    ? "var(--forest-dark, rgba(13,31,14,0.9))"
+                    : "transparent",
+                  border: isActive
+                    ? "1px solid var(--forest-sage)"
+                    : "1px solid var(--border-default)",
+                  color: isActive ? "var(--forest-sage)" : "var(--text-muted)",
+                }}
+              >
+                {tab.label}
+                <span
+                  className="font-mono text-[0.6rem] px-1.5 py-0.5 rounded-pill"
+                  style={{
+                    background: isActive
+                      ? "rgba(122,171,126,0.2)"
+                      : "var(--bg-card)",
+                    color: isActive
+                      ? "var(--forest-sage)"
+                      : "var(--text-muted)",
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Grid */}
-        <div ref={ref} className="grid grid-cols-1 md:grid-cols-3 gap-7">
-          {CATALOG_PRODUCTS.map((product, i) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              index={i}
-              inView={inView}
-            />
-          ))}
+        <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-3 gap-7">
+          {filteredProducts.length > 0 ? (
+            filteredProducts.map((product, i) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                index={i}
+                inView={gridInView}
+              />
+            ))
+          ) : (
+            <div
+              className="col-span-3 py-16 text-center"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <p className="font-mono text-[0.72rem] tracking-[0.15em] uppercase">
+                Tidak ada produk di kategori ini
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Supabase note */}
         <div
-          className={`mt-12 flex items-center justify-center gap-3 transition-all duration-700 ${inView ? "opacity-100" : "opacity-0"}`}
+          className={`mt-12 flex items-center justify-center gap-3 transition-all duration-700 ${gridInView ? "opacity-100" : "opacity-0"}`}
           style={{ transitionDelay: "700ms" }}
         >
           <span

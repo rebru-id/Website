@@ -1,3 +1,4 @@
+// src/assets/icons/SunIcon.tsx
 type IconProps = {
   size?: number;
   className?: string;

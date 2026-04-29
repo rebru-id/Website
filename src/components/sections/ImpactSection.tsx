@@ -1,3 +1,4 @@
+// src/components/sections/ImpactSection.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -169,7 +170,7 @@ export default function ImpactSection() {
     <section
       ref={sectionRef}
       id="impact"
-      className="px-12 py-20 relative overflow-hidden"
+      className="px-12 py-[var(--section-py)] relative overflow-hidden"
       style={{ background: "var(--impact-gradient)" }}
     >
       <div

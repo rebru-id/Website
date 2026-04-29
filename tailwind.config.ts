@@ -8,6 +8,25 @@ const config: Config = {
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+
+  // ── Safelist — class yang wajib dikompilasi meski tidak terdeteksi di content
+  // Diperlukan untuk CVA-based button variants yang didefinisikan di globals.css
+  safelist: [
+    "btn",
+    "btn-primary",
+    "btn-ghost",
+    "btn-ghost-dark",
+    "btn-green",
+    "btn-md",
+    "btn-sm",
+    // ContactPackagesSection package tier CTAs
+    "btn-pkg-kontributor",
+    "btn-pkg-dampak",
+    "btn-pkg-strategis",
+    // rounded-pill used widely via string interpolation
+    "rounded-pill",
+  ],
+
   theme: {
     extend: {
       // ── Color system — semua via CSS variable ──────────────────────────────
@@ -40,8 +59,8 @@ const config: Config = {
           subtle: "var(--border-subtle)",
           strong: "var(--border-strong)",
         },
-        gold: "#c8a84b",
-        amber: "#d4783a",
+        gold: "var(--gold)",
+        amber: "var(--amber)",
       },
 
       // ── Typography ─────────────────────────────────────────────────────────
@@ -60,11 +79,14 @@ const config: Config = {
       },
 
       // ── Spacing & radius ───────────────────────────────────────────────────
+      // Note: these EXTEND (not replace) Tailwind's default scale.
+      // Tailwind defaults (none, sm, DEFAULT, md, lg, xl, 2xl, 3xl, full)
+      // remain available. We add project-specific aliases on top.
       borderRadius: {
-        sm: "4px",
-        md: "10px",
-        lg: "20px",
-        pill: "9999px",
+        sm: "4px", // → rounded-sm  (overrides Tailwind's 2px default)
+        md: "10px", // → rounded-md  (overrides Tailwind's 6px default)
+        lg: "20px", // → rounded-lg  (overrides Tailwind's 8px default)
+        pill: "9999px", // → rounded-pill (new — used across all components)
       },
 
       // ── Z-index system (documented) ────────────────────────────────────────

@@ -1,8 +1,8 @@
+// src/app/layout.tsx
 import type { Metadata } from "next";
 import { Cormorant_Garamond, DM_Sans, Space_Mono } from "next/font/google";
 import Providers from "@/components/Providers";
 import "./globals.css";
-import CartDrawer from "@/components/cart/CartDrawer";
 
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
@@ -70,9 +70,7 @@ export default function RootLayout({
       <body
         className={`${cormorant.variable} ${dmSans.variable} ${spaceMono.variable}`}
       >
-        <Providers>
-          {children} <CartDrawer />
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

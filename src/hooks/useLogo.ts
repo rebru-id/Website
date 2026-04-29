@@ -1,3 +1,4 @@
+// src/hooks/useLogo.ts
 "use client";
 
 import { useTheme } from "next-themes";

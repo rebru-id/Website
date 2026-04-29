@@ -1,3 +1,5 @@
+// src/components/layout/Navbar.tsx
+
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -8,7 +10,6 @@ import { cn } from "@/utils";
 import { useLogo } from "@/hooks/useLogo";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { NAV_LINKS, CONTACT_HREF, CONTACT_LABEL } from "@/constants/navigation";
-import CartButton from "@/components/cart/CartButton";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -107,6 +108,7 @@ export default function Navbar() {
           </nav>
 
           {/* Mobile: toggle + hamburger */}
+          {/* CartButton dihapus dari sini — dipindah ke FloatingCartButton di /products */}
           <div className="md:hidden flex items-center gap-3">
             <ThemeToggle />
             <button
@@ -116,7 +118,6 @@ export default function Navbar() {
             >
               <i className={cn("fas", mobileOpen ? "fa-times" : "fa-bars")} />
             </button>
-            <CartButton />
           </div>
         </div>
       </header>

@@ -1,3 +1,4 @@
+// src/components/sections/ProductsTeaserSection.tsx
 import Link from "next/link";
 import { cn } from "@/utils";
 
@@ -36,7 +37,7 @@ export default function ProductsTeaserSection() {
   return (
     <section
       id="products-teaser"
-      className="px-12 py-24"
+      className="px-12 py-[var(--section-py)]"
       style={{
         background:
           "linear-gradient(180deg, transparent, rgba(13,31,14,0.4), transparent)",

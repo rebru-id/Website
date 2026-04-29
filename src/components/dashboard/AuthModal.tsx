@@ -1,6 +1,8 @@
 "use client";
+// src/components/dashboard/AuthModal.tsx
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import { useAuthModal, type SessionState } from "./AuthModalContext";
 import { type UserRole } from "@/types";
@@ -113,9 +115,9 @@ export default function AuthModal() {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-lg"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-lg"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
@@ -252,6 +254,7 @@ export default function AuthModal() {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

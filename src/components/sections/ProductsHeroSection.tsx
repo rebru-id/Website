@@ -1,32 +1,14 @@
+// src/components/sections/ProductsHeroSection.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-function useInView(threshold = 0.15) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setInView(true);
-          observer.disconnect();
-        }
-      },
-      { threshold },
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [threshold]);
-  return { ref, inView };
-}
+import { useInView } from "@/hooks/useInView";
 
 export default function ProductsHeroSection() {
   const { ref, inView } = useInView(0.1);
 
   return (
     <section
-      className="relative pt-40 pb-24 px-12 overflow-hidden"
+      className="relative pt-[var(--section-py-lg)] pb-[var(--section-py)] px-12 overflow-hidden"
       style={{ background: "var(--hero-gradient)" }}
     >
       {/* Decorative ring — top right */}

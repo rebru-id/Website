@@ -1,3 +1,4 @@
+// src/assets/icons/LockIcon.tsx
 type IconProps = {
   size?: number;
   className?: string;

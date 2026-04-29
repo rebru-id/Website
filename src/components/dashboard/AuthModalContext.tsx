@@ -1,4 +1,5 @@
 "use client";
+// src/components/dashboard/AuthModalContext.tsx
 
 import {
   createContext,

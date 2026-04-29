@@ -1,9 +1,13 @@
+// src/lib/blog-data.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // REBRU BLOG DATA — Mock layer
 // Sprint 3+: replace dengan Supabase query ke tabel `blog_posts`
+// Sprint 1 changes:
+//   - Added BlogAuthor interface + AUTHORS registry
+//   - Added `authorId`, `image`, `tags` fields to BlogPost
+//   - getRelatedPosts now falls back to different-category published posts
 // ─────────────────────────────────────────────────────────────────────────────
 
-// src/lib/blog-data.ts
 export type BlogCategory =
   | "all"
   | "coffee-waste"
@@ -11,6 +15,41 @@ export type BlogCategory =
   | "behind-the-process"
   | "esg-partnership"
   | "product-insights";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTHOR REGISTRY
+// Tambah author baru di sini saat tim berkembang.
+// Sprint 3+: migrate ke tabel `authors` di Supabase.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface BlogAuthor {
+  name: string;
+  /** Short role / location descriptor shown below name */
+  role: string;
+  /** 2-character initials for avatar fallback */
+  initials: string;
+  bio?: string;
+}
+
+export const AUTHORS: Record<string, BlogAuthor> = {
+  rebru: {
+    name: "Tim Rebru",
+    role: "Circular Economy Team · Makassar",
+    initials: "TR",
+    bio: "Tim riset dan operasional Rebru yang membangun sistem ekonomi sirkular berbasis limbah kopi di Sulawesi Selatan.",
+  },
+  // Contoh untuk author individual — aktifkan saat relevan:
+  // "ahmad-rifai": {
+  //   name: "Ahmad Rifai",
+  //   role: "Head of Operations · Rebru",
+  //   initials: "AR",
+  //   bio: "...",
+  // },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLOG POST INTERFACE
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface BlogPost {
   slug: string;
@@ -22,7 +61,25 @@ export interface BlogPost {
   date: string;
   featured: boolean;
   published: boolean;
-  // Article body — array of content blocks
+
+  /**
+   * Author key — references AUTHORS registry.
+   * Defaults to "rebru" in helper functions if not set.
+   */
+  authorId?: string;
+
+  /**
+   * Relative path to featured image.
+   * Convention: /images/blog/<slug>.jpg
+   * If undefined, components render the branded placeholder.
+   * Sprint 3+: replace with Supabase Storage URL.
+   */
+  image?: string;
+
+  /** Searchable tags displayed on article page */
+  tags?: string[];
+
+  /** Article body — array of typed content blocks */
   content?: ContentBlock[];
 }
 
@@ -72,6 +129,9 @@ export const BLOG_POSTS: BlogPost[] = [
     date: "April 2025",
     featured: true,
     published: true,
+    authorId: "rebru",
+    // image: "/images/blog/coffee-waste-to-climate-impact.jpg",
+    tags: ["biochar", "circular economy", "coffee waste", "Makassar", "carbon"],
     content: [
       {
         type: "heading",
@@ -203,6 +263,9 @@ export const BLOG_POSTS: BlogPost[] = [
     date: "March 2025",
     featured: false,
     published: true,
+    authorId: "rebru",
+    // image: "/images/blog/why-coffee-waste-is-a-hidden-environmental-problem.jpg",
+    tags: ["methane", "landfill", "coffee waste", "environment"],
     content: [],
   },
 
@@ -218,6 +281,9 @@ export const BLOG_POSTS: BlogPost[] = [
     date: "March 2025",
     featured: false,
     published: true,
+    authorId: "rebru",
+    // image: "/images/blog/inside-rebru-from-collection-to-transformation.jpg",
+    tags: ["mitra", "collection", "process", "Makassar", "biochar"],
     content: [],
   },
 
@@ -233,10 +299,13 @@ export const BLOG_POSTS: BlogPost[] = [
     date: "February 2025",
     featured: false,
     published: true,
+    authorId: "rebru",
+    // image: "/images/blog/what-is-biochar-and-why-it-matters.jpg",
+    tags: ["biochar", "soil", "carbon sequestration", "science"],
     content: [],
   },
 
-  // ── 5. ESG ───────────────────────────────────────────────────────────────
+  // ── 5. ESG — coming soon ────────────────────────────────────────────────
   {
     slug: "how-businesses-can-turn-waste-into-esg-value",
     title: "How Businesses Can Turn Waste into Measurable ESG Value",
@@ -247,11 +316,13 @@ export const BLOG_POSTS: BlogPost[] = [
     readTime: "5 min",
     date: "February 2025",
     featured: false,
-    published: false, // coming soon
+    published: false,
+    authorId: "rebru",
+    tags: ["ESG", "reporting", "sustainability", "corporate"],
     content: [],
   },
 
-  // ── 6. Education ─────────────────────────────────────────────────────────
+  // ── 6. Circular Economy — coming soon ───────────────────────────────────
   {
     slug: "circular-economy-explained-through-coffee-waste",
     title: "Circular Economy Explained Through Coffee Waste",
@@ -262,13 +333,15 @@ export const BLOG_POSTS: BlogPost[] = [
     readTime: "4 min",
     date: "January 2025",
     featured: false,
-    published: false, // coming soon
+    published: false,
+    authorId: "rebru",
+    tags: ["circular economy", "explainer", "education"],
     content: [],
   },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function getAllPosts(): BlogPost[] {
@@ -288,10 +361,51 @@ export function getFeaturedPost(): BlogPost | undefined {
   return BLOG_POSTS.find((p) => p.featured && p.published);
 }
 
+/**
+ * Returns up to `limit` related posts.
+ * Strategy:
+ *   1. Same category, different slug, published
+ *   2. If not enough, fill with any published posts (different slug, different category)
+ */
 export function getRelatedPosts(slug: string, limit = 3): BlogPost[] {
   const post = getPostBySlug(slug);
   if (!post) return [];
-  return BLOG_POSTS.filter(
-    (p) => p.slug !== slug && p.category === post.category,
-  ).slice(0, limit);
+
+  const sameCategory = BLOG_POSTS.filter(
+    (p) => p.slug !== slug && p.category === post.category && p.published,
+  );
+
+  if (sameCategory.length >= limit) return sameCategory.slice(0, limit);
+
+  const otherPublished = BLOG_POSTS.filter(
+    (p) =>
+      p.slug !== slug &&
+      p.category !== post.category &&
+      p.published &&
+      !p.featured,
+  );
+
+  return [...sameCategory, ...otherPublished].slice(0, limit);
+}
+
+/**
+ * Returns the resolved BlogAuthor for a post.
+ * Falls back to AUTHORS["rebru"] if authorId is not set or not found.
+ */
+export function getAuthor(post: BlogPost): BlogAuthor {
+  return AUTHORS[post.authorId ?? "rebru"] ?? AUTHORS["rebru"];
+}
+
+/**
+ * Returns category counts for published posts (excluding featured).
+ * Used by BlogGridSection to show count badges on filter buttons.
+ */
+export function getCategoryCounts(): Record<string, number> {
+  const counts: Record<string, number> = { all: 0 };
+  BLOG_POSTS.forEach((p) => {
+    if (!p.published || p.featured) return;
+    counts["all"] = (counts["all"] ?? 0) + 1;
+    counts[p.category] = (counts[p.category] ?? 0) + 1;
+  });
+  return counts;
 }

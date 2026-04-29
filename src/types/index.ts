@@ -1,3 +1,5 @@
+// src/types/index.ts
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REBRU — Shared TypeScript Types
 // Maps directly to the Supabase database schema
@@ -9,7 +11,7 @@ export type UserRole = "admin" | "mitra" | "government";
 
 export interface UserProfile {
   id: string;
-  user_id: string;         // FK → auth.users
+  user_id: string; // FK → auth.users
   name: string;
   phone?: string;
   role: UserRole;
@@ -34,7 +36,7 @@ export interface PartnerApplication {
 
 export interface Mitra {
   id: string;
-  user_id?: string;        // nullable — mitra bisa ada sebelum punya akun
+  user_id?: string; // nullable — mitra bisa ada sebelum punya akun
   name: string;
   type: MitraType;
   location: string;
@@ -44,7 +46,14 @@ export interface Mitra {
 
 // ── Waste & Supply ────────────────────────────────────────────────────────────
 
-export type WasteType = "coffee" | "rice_husk" | "corn_husk" | "cocoa" | "coconut" | "biomass" | "organic";
+export type WasteType =
+  | "coffee"
+  | "rice_husk"
+  | "corn_husk"
+  | "cocoa"
+  | "coconut"
+  | "biomass"
+  | "organic";
 export type CollectionStatus = "pending" | "processed";
 export type ConversionMethod = "biochar" | "compost" | "briquette";
 
@@ -119,8 +128,8 @@ export interface ImpactLog {
 // ── Aggregated Views (Supabase Views) ─────────────────────────────────────────
 
 export interface GlobalStats {
-  total_waste_collected: number;  // kg
-  total_co2_saved: number;        // ton
+  total_waste_collected: number; // kg
+  total_co2_saved: number; // ton
   total_products_sold: number;
   total_partners: number;
 }
@@ -144,3 +153,10 @@ export interface ContactMessage {
   type: ContactType;
   created_at: string;
 }
+
+// ── UI Layer Types ────────────────────────────────────────────────────────────
+// Tipe khusus untuk komponen UI products page — terpisah dari Supabase schema.
+// UIProduct berbeda dari Product (Supabase) — lebih lengkap untuk kebutuhan UI.
+
+export * from "./product";
+export * from "./cart";

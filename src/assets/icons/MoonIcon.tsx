@@ -1,3 +1,4 @@
+// src/assets/icons/MoonIcon.tsx
 type IconProps = {
   size?: number;
   className?: string;
