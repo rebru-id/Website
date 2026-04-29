@@ -95,7 +95,7 @@ export interface UIProduct {
   accentBorder?: string;
   badge: string | null;
 
-  isFeatured: boolean;
+  isFeatured?: boolean;
 
   // ── Konten detail ──
   specs?: ProductSpecs;
