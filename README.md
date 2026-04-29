@@ -130,7 +130,7 @@ Dashboard diakses via **icon kunci (🔒)** di pojok kanan footer.
 ## 🌐 Deploy ke Vercel
 
 ```bash
-# Push ke GitHub dulu
+# Push ke GitHub terlebih dahulu
 git init
 git add .
 git commit -m "feat: initial Rebru Next.js setup"
