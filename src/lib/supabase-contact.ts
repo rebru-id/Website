@@ -13,52 +13,32 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase client — lazy singleton + hardcode fallback
 //
-// KENAPA TIDAK MODULE LEVEL:
-//   createClient() di module level menyebabkan env vars belum terbaca
-//   saat Next.js mengevaluasi module (terutama di SSR/build time).
-//   Hasilnya: supabase client terbentuk dengan URL undefined → semua
-//   operasi diam-diam gagal tanpa error yang terlihat di UI.
+// WAJIB: createClient TIDAK boleh dipanggil di module level.
+// Di Next.js 14 + Vercel production, module dievaluasi saat build time
+// (SSR/edge), bukan saat browser runtime. Pada titik itu process.env
+// belum di-inject → URL = undefined → semua insert gagal tanpa error UI.
 //
-// SOLUSI — lazy singleton:
-//   Client dibuat pertama kali saat fungsi dipanggil (runtime browser),
-//   bukan saat module di-import (build time).
+// Lazy singleton: client dibuat pertama kali saat fungsi dipanggil
+// di browser (runtime), env sudah pasti tersedia.
 //
-// HARDCODE FALLBACK:
-//   NEXT_PUBLIC_ anon key aman di-hardcode karena by design sudah
-//   ter-bundle ke client JS bundle. Keamanan dijaga RLS di Supabase.
+// Hardcode fallback: NEXT_PUBLIC_ anon key aman di-hardcode karena:
+//   1. Sudah ter-bundle ke client JS oleh Next.js (bukan secret)
+//   2. Keamanan data dijaga RLS di Supabase, bukan kerahasiaan key
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL = "https://mubzwqkhhhittibstugh.supabase.co";
-const SUPABASE_ANON =
+const _SUPABASE_URL = "https://mubzwqkhhhittibstugh.supabase.co";
+const _SUPABASE_ANON =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ynp3cWtoaGhpdHRpYnN0dWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMTA5NjYsImV4cCI6MjA5MDY4Njk2Nn0.C_YqDM0OFAVc9zww5afq9S0po2n7KzZGW9HhzNsMcrE";
 
-let _client: SupabaseClient | null = null;
+let _supabaseInstance: SupabaseClient | null = null;
 
 function getClient(): SupabaseClient {
-  if (_client) return _client;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? SUPABASE_ANON;
-  _client = createClient(url, key);
-  return _client;
+  if (_supabaseInstance) return _supabaseInstance;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? _SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? _SUPABASE_ANON;
+  _supabaseInstance = createClient(url, key);
+  return _supabaseInstance;
 }
-
-// Backward-compat export — masih bisa dipakai komponen lain yang sudah
-// import { supabase } from "@/lib/supabase-contact"
-export const supabase = {
-  from: (...args: Parameters<SupabaseClient["from"]>) =>
-    getClient().from(...args),
-  auth: new Proxy({} as SupabaseClient["auth"], {
-    get:
-      (_t, prop) =>
-      (...a: unknown[]) =>
-        (
-          getClient().auth as unknown as Record<
-            string,
-            (...args: unknown[]) => unknown
-          >
-        )[prop as string](...a),
-  }),
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES — format lokasi sesuai ContactFormSection.tsx (opt.value, opt.label, opt.aktif)
