@@ -458,17 +458,12 @@ function PartnershipForm({
       setForm((p) => ({ ...p, type: preSelected as PartnerForm["type"] }));
   }, [preSelected]);
 
-  // T2.4 — useMemo: location lists tidak re-compute setiap keystroke user
-  // ✅ SESUDAH — 3 baris bersih, type dan initial value menempel ke useState
-  const [kotaList, setKotaList] = useState<
-    { value: string; label: string; aktif: boolean }[]
-  >([]);
-  const [kecamatanList, setKecamatanList] = useState<
-    { value: string; label: string }[]
-  >([]);
-  const [kelurahanList, setKelurahanList] = useState<
-    { value: string; label: string }[]
-  >([]);
+  // T2.4 — Gunakan LokasiOption langsung dari import agar tipe state selalu
+  // sinkron dengan return type fetchKotaList / fetchKecamatanByKota /
+  // fetchKelurahanByKecamatan. Tidak perlu duplikasi definisi inline.
+  const [kotaList, setKotaList] = useState<LokasiOption[]>([]);
+  const [kecamatanList, setKecamatanList] = useState<LokasiOption[]>([]);
+  const [kelurahanList, setKelurahanList] = useState<LokasiOption[]>([]);
 
   // Load kota saat komponen mount
   useEffect(() => {
