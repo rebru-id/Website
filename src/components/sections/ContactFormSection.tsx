@@ -459,28 +459,16 @@ function PartnershipForm({
   }, [preSelected]);
 
   // T2.4 — useMemo: location lists tidak re-compute setiap keystroke user
-  // BENAR ✅ — satu blok, tidak ada line break yang salah
-  const [kotaList, setKotaList] = useState;
-  {
-    value: string;
-    label: string;
-    aktif: boolean;
-  }
-  [] > [];
-
-  const [kecamatanList, setKecamatanList] = useState;
-  {
-    value: string;
-    label: string;
-  }
-  [] > [];
-
-  const [kelurahanList, setKelurahanList] = useState;
-  {
-    value: string;
-    label: string;
-  }
-  [] > [];
+  // ✅ SESUDAH — 3 baris bersih, type dan initial value menempel ke useState
+  const [kotaList, setKotaList] = useState<
+    { value: string; label: string; aktif: boolean }[]
+  >([]);
+  const [kecamatanList, setKecamatanList] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [kelurahanList, setKelurahanList] = useState<
+    { value: string; label: string }[]
+  >([]);
 
   // Load kota saat komponen mount
   useEffect(() => {
