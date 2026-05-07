@@ -459,11 +459,26 @@ function PartnershipForm({
   }, [preSelected]);
 
   // T2.4 — useMemo: location lists tidak re-compute setiap keystroke user
-  const [kotaList, setKotaList] = useState<string[]>([]);
-  const [kecamatanList, setKecamatanList] = useState<string[]>([]);
-  const [kelurahanList, setKelurahanList] = useState<string[]>([]);
-
-  // Load kota saat komponen mount
+  // SESUDAH ✅ — samakan dengan IgPartnershipSection.tsx
+  const [kotaList, setKotaList] = useState;
+  {
+    value: string;
+    label: string;
+    aktif: boolean;
+  }
+  [] > [];
+  const [kecamatanList, setKecamatanList] = useState;
+  {
+    value: string;
+    label: string;
+  }
+  [] > [];
+  const [kelurahanList, setKelurahanList] = useState;
+  {
+    value: string;
+    label: string;
+  }
+  [] > []; // Load kota saat komponen mount
   useEffect(() => {
     fetchKotaList().then(setKotaList);
   }, []);
