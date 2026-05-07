@@ -8,12 +8,57 @@
 //   sehingga ContactFormSection.tsx tidak perlu diubah sama sekali.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
+// ─────────────────────────────────────────────────────────────────────────────
+// Supabase client — lazy singleton + hardcode fallback
+//
+// KENAPA TIDAK MODULE LEVEL:
+//   createClient() di module level menyebabkan env vars belum terbaca
+//   saat Next.js mengevaluasi module (terutama di SSR/build time).
+//   Hasilnya: supabase client terbentuk dengan URL undefined → semua
+//   operasi diam-diam gagal tanpa error yang terlihat di UI.
+//
+// SOLUSI — lazy singleton:
+//   Client dibuat pertama kali saat fungsi dipanggil (runtime browser),
+//   bukan saat module di-import (build time).
+//
+// HARDCODE FALLBACK:
+//   NEXT_PUBLIC_ anon key aman di-hardcode karena by design sudah
+//   ter-bundle ke client JS bundle. Keamanan dijaga RLS di Supabase.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SUPABASE_URL = "https://mubzwqkhhhittibstugh.supabase.co";
+const SUPABASE_ANON =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ynp3cWtoaGhpdHRpYnN0dWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMTA5NjYsImV4cCI6MjA5MDY4Njk2Nn0.C_YqDM0OFAVc9zww5afq9S0po2n7KzZGW9HhzNsMcrE";
+
+let _client: SupabaseClient | null = null;
+
+function getClient(): SupabaseClient {
+  if (_client) return _client;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? SUPABASE_ANON;
+  _client = createClient(url, key);
+  return _client;
+}
+
+// Backward-compat export — masih bisa dipakai komponen lain yang sudah
+// import { supabase } from "@/lib/supabase-contact"
+export const supabase = {
+  from: (...args: Parameters<SupabaseClient["from"]>) =>
+    getClient().from(...args),
+  auth: new Proxy({} as SupabaseClient["auth"], {
+    get:
+      (_t, prop) =>
+      (...a: unknown[]) =>
+        (
+          getClient().auth as unknown as Record<
+            string,
+            (...args: unknown[]) => unknown
+          >
+        )[prop as string](...a),
+  }),
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES — format lokasi sesuai ContactFormSection.tsx (opt.value, opt.label, opt.aktif)
@@ -68,7 +113,7 @@ interface GeneralFormState {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchKotaList(): Promise<LokasiOption[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from("ref_kota")
     .select("nama, aktif")
     .order("aktif", { ascending: false }) // aktif = true muncul duluan
@@ -92,7 +137,7 @@ export async function fetchKecamatanByKota(
   if (!kotaNama || kotaNama === "Lainnya" || kotaNama === "Kota / Kab. Lain")
     return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from("ref_kecamatan")
     .select("nama, ref_kota!inner(nama)")
     .eq("ref_kota.nama", kotaNama)
@@ -116,7 +161,7 @@ export async function fetchKelurahanByKecamatan(
 ): Promise<LokasiOption[]> {
   if (!kecamatanNama || !kotaNama) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from("ref_kelurahan")
     .select("nama, ref_kecamatan!inner(nama, ref_kota!inner(nama))")
     .eq("ref_kecamatan.nama", kecamatanNama)
@@ -149,24 +194,26 @@ export async function insertPartnerApplication(
     const isCustomKota =
       form.kota === "Kota / Kab. Lain" || form.kota === "Lainnya" || !form.kota;
 
-    const { error } = await supabase.from("partner_applications").insert({
-      pic_name: form.pic.trim(),
-      organization: form.organization.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim().toLowerCase(),
-      package_type: form.type as PackageType,
-      jenis_usaha: form.jenisUsaha as JenisUsaha,
-      volume_limbah: form.volumeLimbah as VolumeLimbah,
-      kota_nama: isCustomKota
-        ? form.kotaCustom?.trim() || "Lainnya"
-        : form.kota,
-      kota_custom: isCustomKota ? form.kotaCustom?.trim() || null : null,
-      kecamatan_nama: form.kecamatan.trim(),
-      kelurahan_nama: form.kelurahan.trim() || null,
-      alamat_detail: form.alamat.trim(),
-      message: form.message.trim() || null,
-      source_platform: "website",
-    });
+    const { error } = await getClient()
+      .from("partner_applications")
+      .insert({
+        pic_name: form.pic.trim(),
+        organization: form.organization.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim().toLowerCase(),
+        package_type: form.type as PackageType,
+        jenis_usaha: form.jenisUsaha as JenisUsaha,
+        volume_limbah: form.volumeLimbah as VolumeLimbah,
+        kota_nama: isCustomKota
+          ? form.kotaCustom?.trim() || "Lainnya"
+          : form.kota,
+        kota_custom: isCustomKota ? form.kotaCustom?.trim() || null : null,
+        kecamatan_nama: form.kecamatan.trim(),
+        kelurahan_nama: form.kelurahan.trim() || null,
+        alamat_detail: form.alamat.trim(),
+        message: form.message.trim() || null,
+        source_platform: "website",
+      });
 
     if (error) throw new Error(error.message);
     return { error: null };
@@ -183,11 +230,13 @@ export async function insertContactMessage(
   form: GeneralFormState,
 ): Promise<{ error: Error | null }> {
   try {
-    const { error } = await supabase.from("contact_messages").insert({
-      sender_name: form.name.trim(),
-      phone: form.phone.trim() || null,
-      message: form.message.trim(),
-    });
+    const { error } = await getClient()
+      .from("contact_messages")
+      .insert({
+        sender_name: form.name.trim(),
+        phone: form.phone.trim() || null,
+        message: form.message.trim(),
+      });
 
     if (error) throw new Error(error.message);
     return { error: null };
@@ -201,7 +250,7 @@ export async function insertContactMessage(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getProducts() {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from("products")
     .select("*, product_variants(*)")
     .eq("is_active", true)
@@ -214,7 +263,7 @@ export async function getProducts() {
 }
 
 export async function getFeaturedProducts() {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from("products")
     .select("*, product_variants(*)")
     .eq("is_active", true)
@@ -225,7 +274,7 @@ export async function getFeaturedProducts() {
 }
 
 export async function getPackages() {
-  const { data, error } = await supabase
+  const { data, error } = await getClient()
     .from("packages")
     .select("*")
     .eq("is_active", true)
