@@ -1,18 +1,30 @@
 "use client";
 // src/components/dashboard/AuthModal.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+// MODIFIED — penambahan role "collector" tanpa breaking existing flows:
+//
+//   1. MOCK_USERS: tambah "collector@rebru.id"
+//   2. ROLE_ICONS: tambah "collector" → fa-truck-pickup
+//      (wajib karena Record<UserRole, string> menuntut semua key terdefinisi
+//       setelah "collector" ditambahkan ke UserRole)
+//   3. launchDashboard(): tambah conditional redirect ke /collector
+//      hanya untuk role collector — admin/mitra/government TIDAK terpengaruh,
+//      mereka tetap hanya setSession + closeModal seperti sebelumnya
+//
+// Semua test case existing tetap valid:
+//   admin@rebru.id   → setSession → DashboardOverlay terbuka (tidak berubah)
+//   mitra@rebru.id   → setSession → DashboardOverlay terbuka (tidak berubah)
+//   gov@rebru.id     → setSession → DashboardOverlay terbuka (tidak berubah)
+//   multi@rebru.id   → step role → pilih admin/mitra → tidak berubah
+//   collector@rebru.id → setSession → redirect ke /collector (baru)
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils";
 import { useAuthModal, type SessionState } from "./AuthModalContext";
 import { type UserRole } from "@/types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Mock users — REPLACE with Supabase Auth when ready:
-//   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-//   then: const { data: profile } = await supabase.from("user_profiles")
-//           .select("role, name").eq("user_id", data.user.id).single()
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface MockUser {
   password: string;
@@ -20,6 +32,7 @@ interface MockUser {
   roles: UserRole[];
 }
 
+// ── MODIFIED: tambah collector ─────────────────────────────────────────────
 const MOCK_USERS: Record<string, MockUser> = {
   "admin@rebru.id": {
     password: "rebru2025",
@@ -41,12 +54,22 @@ const MOCK_USERS: Record<string, MockUser> = {
     name: "Multi Role User",
     roles: ["admin", "mitra"],
   },
+  // ── BARU: akun collector ──
+  "collector@rebru.id": {
+    password: "collector123",
+    name: "Rizky Kahwa",
+    roles: ["collector"],
+  },
 };
 
+// ── MODIFIED: tambah collector icon ───────────────────────────────────────
+// Record<UserRole, string> mensyaratkan semua key ada setelah UserRole diupdate.
+// fa-truck-pickup → ikon truk kecil, semantik untuk kegiatan penjemputan.
 const ROLE_ICONS: Record<UserRole, string> = {
   admin: "fa-shield-halved",
   mitra: "fa-recycle",
   government: "fa-landmark",
+  collector: "fa-truck-pickup",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +78,7 @@ const ROLE_ICONS: Record<UserRole, string> = {
 
 export default function AuthModal() {
   const { isOpen, closeModal, setSession } = useAuthModal();
+  const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,7 +88,6 @@ export default function AuthModal() {
 
   const emailRef = useRef<HTMLInputElement>(null);
 
-  // Focus email on open
   useEffect(() => {
     if (isOpen) {
       setStep("login");
@@ -73,7 +96,6 @@ export default function AuthModal() {
     }
   }, [isOpen]);
 
-  // Close on Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") handleClose();
@@ -107,10 +129,19 @@ export default function AuthModal() {
     }
   }
 
+  // ── MODIFIED: redirect collector ke /collector ────────────────────────────
+  // Roles lain (admin, mitra, government) tidak disentuh — hanya setSession.
+  // Collector menggunakan router.push() agar konsisten dengan Next.js App Router
+  // dan agar back-button browser bekerja dengan benar.
   function launchDashboard(name: string, role: UserRole) {
     const sess: SessionState = { name, role, email };
     setSession(sess);
     handleClose();
+
+    if (role === "collector") {
+      router.push("/collector");
+    }
+    // admin, mitra, government: tidak ada redirect — DashboardOverlay yang handle
   }
 
   if (!isOpen) return null;

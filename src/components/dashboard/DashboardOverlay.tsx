@@ -73,6 +73,10 @@ const TABS_BY_ROLE: Record<UserRole, Tab[]> = {
       group: "analytics",
     },
   ],
+  // Collector tidak menggunakan DashboardOverlay — mereka punya halaman /collector.
+  // Key ini wajib ada karena Record<UserRole, Tab[]> setelah "collector"
+  // ditambahkan ke UserRole. Tanpa ini TypeScript error dan runtime crash.
+  collector: [],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1087,6 +1091,11 @@ export default function DashboardOverlay() {
   }, [session]);
 
   if (!session) return null;
+
+  // Collector memiliki halaman operasional tersendiri di /collector.
+  // DashboardOverlay tidak dirancang untuk mereka — kembalikan null
+  // agar overlay tidak terbuka dan tidak ada tab yang perlu dirender.
+  if (session.role === "collector") return null;
 
   const tabs = TABS_BY_ROLE[session.role];
   const initials = getInitials(session.name);

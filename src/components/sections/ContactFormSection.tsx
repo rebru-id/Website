@@ -5,11 +5,6 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useInView } from "@/hooks/useInView";
 import { PACKAGES } from "./ContactPackagesSection";
-import {
-  getKotaList,
-  getKecamatanByKota,
-  getKelurahanByKecamatan,
-} from "@/lib/location-data";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // T2.4 — Validation regex constants
@@ -49,29 +44,14 @@ const VOLUME_OPTIONS = [
 // Sprint 3: swap dua baris mock per fungsi dengan Supabase client call
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function mockInsertPartnerApplication(
-  data: object,
-): Promise<{ error: Error | null }> {
-  // Sprint 3: uncomment baris berikut & hapus mock di bawah
-  // import { supabase } from "@/lib/supabase";
-  // const { error } = await supabase.from("partner_applications").insert(data);
-  // return { error };
-  console.log("[MOCK] partner_applications.insert →", data);
-  await new Promise((r) => setTimeout(r, 900));
-  return { error: null };
-}
-
-async function mockInsertContactMessage(
-  data: object,
-): Promise<{ error: Error | null }> {
-  // Sprint 3: uncomment baris berikut & hapus mock di bawah
-  // import { supabase } from "@/lib/supabase";
-  // const { error } = await supabase.from("contact_messages").insert(data);
-  // return { error };
-  console.log("[MOCK] contact_messages.insert →", data);
-  await new Promise((r) => setTimeout(r, 900));
-  return { error: null };
-}
+import {
+  insertPartnerApplication,
+  insertContactMessage,
+  fetchKotaList,
+  fetchKecamatanByKota,
+  fetchKelurahanByKecamatan,
+  type LokasiOption,
+} from "@/lib/supabase-contact";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -479,20 +459,37 @@ function PartnershipForm({
   }, [preSelected]);
 
   // T2.4 — useMemo: location lists tidak re-compute setiap keystroke user
-  const kotaList = useMemo(() => getKotaList(), []);
-  const kecamatanList = useMemo(
-    () =>
-      form.kota && form.kota !== "lain" ? getKecamatanByKota(form.kota) : [],
-    [form.kota],
-  );
-  const kelurahanList = useMemo(
-    () => (form.kecamatan ? getKelurahanByKecamatan(form.kecamatan) : []),
-    [form.kecamatan],
-  );
+  const [kotaList, setKotaList] = useState<string[]>([]);
+  const [kecamatanList, setKecamatanList] = useState<string[]>([]);
+  const [kelurahanList, setKelurahanList] = useState<string[]>([]);
+
+  // Load kota saat komponen mount
+  useEffect(() => {
+    fetchKotaList().then(setKotaList);
+  }, []);
+
+  // Load kecamatan saat kota berubah
+  useEffect(() => {
+    if (!form.kota || form.kota === "Lainnya") {
+      setKecamatanList([]);
+      return;
+    }
+    fetchKecamatanByKota(form.kota).then(setKecamatanList);
+  }, [form.kota]);
+
+  // Load kelurahan saat kecamatan berubah
+  useEffect(() => {
+    if (!form.kecamatan || !form.kota) {
+      setKelurahanList([]);
+      return;
+    }
+    fetchKelurahanByKecamatan(form.kecamatan, form.kota).then(setKelurahanList);
+  }, [form.kecamatan, form.kota]);
   const isKotaAktif = useMemo(
     () => kotaList.find((k) => k.value === form.kota)?.aktif ?? false,
     [kotaList, form.kota],
   );
+
   const isKotaLain = form.kota === "lain";
   const kotaLabel = useMemo(
     () => kotaList.find((k) => k.value === form.kota)?.label ?? "",
@@ -617,21 +614,7 @@ function PartnershipForm({
     setLoading(true);
     setSubmitError(null);
     try {
-      const { error } = await mockInsertPartnerApplication({
-        name: form.pic,
-        organization: form.organization,
-        phone: form.phone,
-        email: form.email,
-        jenis_usaha: form.jenisUsaha,
-        volume_limbah: form.volumeLimbah,
-        city: isKotaLain ? form.kotaCustom : kotaLabel,
-        kecamatan: kecamatanLabel || form.kecamatan,
-        kelurahan: kelurahanLabel || form.kelurahan,
-        alamat: form.alamat,
-        type: form.type,
-        message: form.message,
-        status: "pending",
-      });
+      const { error } = await insertPartnerApplication(form);
       if (error) throw error;
       setSubmitted(true);
     } catch (err) {
@@ -1190,12 +1173,7 @@ function GeneralContactForm({ onBack }: { onBack: () => void }) {
     setLoading(true);
     setSubmitError(null);
     try {
-      const { error } = await mockInsertContactMessage({
-        name: form.name,
-        phone: form.phone || null,
-        message: form.message,
-        type: "general",
-      });
+      const { error } = await insertContactMessage(form);
       if (error) throw error;
       setSubmitted(true);
     } catch (err) {

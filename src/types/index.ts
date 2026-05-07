@@ -1,5 +1,4 @@
 // src/types/index.ts
-
 // ─────────────────────────────────────────────────────────────────────────────
 // REBRU — Shared TypeScript Types
 // Maps directly to the Supabase database schema
@@ -7,7 +6,10 @@
 
 // ── User & Auth ──────────────────────────────────────────────────────────────
 
-export type UserRole = "admin" | "mitra" | "government";
+// MODIFIED: tambah "collector" — diperlukan untuk halaman /collector
+// Tidak breaking: semua ROLE_ICONS dan switch/case yang ada tetap valid
+// karena TypeScript hanya menuntut exhaustiveness jika ada exhaustive check.
+export type UserRole = "admin" | "mitra" | "government" | "collector";
 
 export interface UserProfile {
   id: string;
@@ -36,7 +38,7 @@ export interface PartnerApplication {
 
 export interface Mitra {
   id: string;
-  user_id?: string; // nullable — mitra bisa ada sebelum punya akun
+  user_id?: string;
   name: string;
   type: MitraType;
   location: string;
@@ -128,8 +130,8 @@ export interface ImpactLog {
 // ── Aggregated Views (Supabase Views) ─────────────────────────────────────────
 
 export interface GlobalStats {
-  total_waste_collected: number; // kg
-  total_co2_saved: number; // ton
+  total_waste_collected: number;
+  total_co2_saved: number;
   total_products_sold: number;
   total_partners: number;
 }
@@ -155,8 +157,6 @@ export interface ContactMessage {
 }
 
 // ── UI Layer Types ────────────────────────────────────────────────────────────
-// Tipe khusus untuk komponen UI products page — terpisah dari Supabase schema.
-// UIProduct berbeda dari Product (Supabase) — lebih lengkap untuk kebutuhan UI.
 
 export * from "./product";
 export * from "./cart";
