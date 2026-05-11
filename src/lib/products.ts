@@ -36,6 +36,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 1. Biochar — Featured product ────────────────────────────────────────
   {
     id: "biochar-001",
+    slug: "biochar",
     name: "Biochar",
     tagline:
       "Biochar adalah bukti nyata bahwa ampas kopi dapat memberi manfaat jauh melampaui meja café.",
@@ -80,6 +81,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 2. Compost ────────────────────────────────────────────────────────────
   {
     id: "compost-001",
+    slug: "compost",
     name: "Compost",
     tagline:
       "Ampas kopi yang biasanya terbuang bisa menjadi sumber nutrisi berharga bagi tanah.",
@@ -117,6 +119,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 3. Bio-briquettes ─────────────────────────────────────────────────────
   {
     id: "briquette-001",
+    slug: "bio-briquettes",
     name: "Bio-briquettes",
     tagline:
       "Rebru menghadirkan briket ramah lingkungan sebagai alternatif energi terbarukan.",
@@ -154,6 +157,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 4. Scented Candle — EcoGoods ─────────────────────────────────────────
   {
     id: "candle-001",
+    slug: "scented-candle",
     name: "Scented Candle",
     tagline:
       "Lilin aromaterapi dari ampas kopi — menghadirkan aroma kopi yang hangat sekaligus mengurangi limbah.",
@@ -189,6 +193,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 5. Coaster — EcoGoods ────────────────────────────────────────────────
   {
     id: "coaster-001",
+    slug: "coaster",
     name: "Coaster",
     tagline:
       "Tatakan meja dari ampas kopi terkompresi — fungsional, estetik, dan ramah lingkungan.",
@@ -219,6 +224,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 6. Soap — EcoGoods ───────────────────────────────────────────────────
   {
     id: "soap-001",
+    slug: "coffee-soap",
     name: "Coffee Soap",
     tagline:
       "Sabun eksfoliasi dari ampas kopi — membersihkan, menghaluskan, dan menghilangkan bau secara alami.",
@@ -255,6 +261,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 7. Diffuser — EcoGoods R&D ───────────────────────────────────────────
   {
     id: "diffuser-001",
+    slug: "coffee-diffuser",
     name: "Coffee Diffuser",
     tagline:
       "Diffuser aromaterapi berbasis ekstrak kopi — menghadirkan aroma kopi segar sepanjang hari.",
@@ -283,6 +290,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 8. Car Fragrance — EcoGoods R&D ─────────────────────────────────────
   {
     id: "carfrag-001",
+    slug: "car-fragrance",
     name: "Car Fragrance",
     tagline:
       "Pengharum mobil dari ampas kopi — aroma kopi natural yang menyegarkan kabin kendaraanmu.",
@@ -315,6 +323,7 @@ const ALL_PRODUCTS: UIProduct[] = [
   // ── 9. Raw Materials — R&D ────────────────────────────────────────────────
   {
     id: "rawmat-001",
+    slug: "raw-materials",
     name: "Raw Materials",
     tagline:
       "Biodegradable cups, blocks, and sustainable packaging prototypes from compressed coffee waste.",
@@ -398,7 +407,7 @@ export function getCatalogByCategory(category: string): UIProduct[] {
  * Sprint 4: query products WHERE slug = slug
  */
 export function getProductBySlug(slug: string): UIProduct | null {
-  return ALL_PRODUCTS.find((p) => slugify(p.name) === slug) ?? null;
+  return ALL_PRODUCTS.find((p) => p.slug === slug) ?? null;
 }
 
 /**

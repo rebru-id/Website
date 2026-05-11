@@ -79,6 +79,7 @@ export interface ProductImpact {
 export interface UIProduct {
   // ── Identitas ──
   id: string;
+  slug: string;
   name: string;
   tagline: string;
   category?: string;
