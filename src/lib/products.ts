@@ -1,46 +1,30 @@
 // src/lib/products.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Single source of truth untuk semua data produk Rebru
+// Sprint 4A — Products fetch dari Supabase
 //
-// SEBELUMNYA data tersebar di:
-//   - ProductsFeaturedSection.tsx  → const BIOCHAR
-//   - ProductsCatalogSection.tsx   → const CATALOG_PRODUCTS
-//
-// SEKARANG semua komponen dan halaman import dari sini:
-//   import { getFeaturedProduct, getCatalogProducts, getProductBySlug }
-//     from "@/lib/products"
-//
-// Sprint 4: ganti isi fungsi-fungsi di bawah dengan Supabase fetch.
-//   Komponen tidak perlu diubah sama sekali — hanya file ini.
-//
-//   Contoh Sprint 4:
-//   export async function getAllProducts() {
-//     const { data } = await supabase
-//       .from("products")
-//       .select("*, product_variants(*)")
-//       .eq("is_active", true)
-//     return data.map(mapSupabaseToUIProduct)
-//   }
+// FIX dari versi sebelumnya:
+//   1. createClient() di Next.js 16 adalah ASYNC (cookies() dari next/headers
+//      sudah async sejak Next.js 15). Wajib: const supabase = await createClient()
+//   2. fetchAllFromSupabase didefinisikan ulang secara eksplisit agar tidak
+//      hilang saat copy-paste file yang panjang
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { slugify } from "@/utils";
+import { createClient } from "@/lib/supabase/server";
+import { mapSupabaseToUIProduct } from "@/lib/mappers";
 import type { UIProduct } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data — semua produk Rebru
-// Untuk tambah produk: tambah object baru di array ALL_PRODUCTS
-// Untuk edit harga: ubah di variants[].price
+// Static fallback — dipakai jika Supabase gagal / tidak tersedia
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALL_PRODUCTS: UIProduct[] = [
-  // ── 1. Biochar — Featured product ────────────────────────────────────────
+const FALLBACK: UIProduct[] = [
   {
     id: "biochar-001",
     slug: "biochar",
     name: "Biochar",
     tagline:
       "Biochar adalah bukti nyata bahwa ampas kopi dapat memberi manfaat jauh melampaui meja café.",
-    price: null, // tidak ada harga flat — harga per-varian
+    price: null,
     unit: "kg",
     category: "soil-amendment",
     icon: "fa-seedling",
@@ -77,8 +61,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-seedling",
     },
   },
-
-  // ── 2. Compost ────────────────────────────────────────────────────────────
   {
     id: "compost-001",
     slug: "compost",
@@ -115,8 +97,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-seedling",
     },
   },
-
-  // ── 3. Bio-briquettes ─────────────────────────────────────────────────────
   {
     id: "briquette-001",
     slug: "bio-briquettes",
@@ -153,8 +133,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-fire",
     },
   },
-
-  // ── 4. Scented Candle — EcoGoods ─────────────────────────────────────────
   {
     id: "candle-001",
     slug: "scented-candle",
@@ -169,6 +147,7 @@ const ALL_PRODUCTS: UIProduct[] = [
     accentBg: "rgba(176,125,86,0.08)",
     accentBorder: "rgba(176,125,86,0.2)",
     badge: null,
+    isFeatured: false,
     variants: [
       { label: "1 pcs", price: 50000 },
       { label: "3 pcs", price: 135000 },
@@ -189,8 +168,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-fire-flame-curved",
     },
   },
-
-  // ── 5. Coaster — EcoGoods ────────────────────────────────────────────────
   {
     id: "coaster-001",
     slug: "coaster",
@@ -205,6 +182,7 @@ const ALL_PRODUCTS: UIProduct[] = [
     accentBg: "rgba(138,106,74,0.08)",
     accentBorder: "rgba(138,106,74,0.2)",
     badge: null,
+    isFeatured: false,
     variants: [
       { label: "1 pcs", price: 20000 },
       { label: "4 pcs", price: 72000 },
@@ -220,8 +198,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-circle",
     },
   },
-
-  // ── 6. Soap — EcoGoods ───────────────────────────────────────────────────
   {
     id: "soap-001",
     slug: "coffee-soap",
@@ -236,6 +212,7 @@ const ALL_PRODUCTS: UIProduct[] = [
     accentBg: "rgba(158,123,90,0.08)",
     accentBorder: "rgba(158,123,90,0.2)",
     badge: null,
+    isFeatured: false,
     variants: [
       { label: "1 pcs", price: 15000 },
       { label: "3 pcs", price: 40000 },
@@ -257,8 +234,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-soap",
     },
   },
-
-  // ── 7. Diffuser — EcoGoods R&D ───────────────────────────────────────────
   {
     id: "diffuser-001",
     slug: "coffee-diffuser",
@@ -273,6 +248,7 @@ const ALL_PRODUCTS: UIProduct[] = [
     accentBg: "rgba(122,138,106,0.07)",
     accentBorder: "rgba(122,138,106,0.2)",
     badge: "In R&D",
+    isFeatured: false,
     variants: [],
     specs: {
       beratBersih: "—",
@@ -286,8 +262,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-wind",
     },
   },
-
-  // ── 8. Car Fragrance — EcoGoods R&D ─────────────────────────────────────
   {
     id: "carfrag-001",
     slug: "car-fragrance",
@@ -302,6 +276,7 @@ const ALL_PRODUCTS: UIProduct[] = [
     accentBg: "rgba(106,122,138,0.07)",
     accentBorder: "rgba(106,122,138,0.2)",
     badge: "In R&D",
+    isFeatured: false,
     variants: [],
     specs: {
       beratBersih: "—",
@@ -319,8 +294,6 @@ const ALL_PRODUCTS: UIProduct[] = [
       icon: "fa-car",
     },
   },
-
-  // ── 9. Raw Materials — R&D ────────────────────────────────────────────────
   {
     id: "rawmat-001",
     slug: "raw-materials",
@@ -335,6 +308,7 @@ const ALL_PRODUCTS: UIProduct[] = [
     accentBg: "rgba(200,168,75,0.07)",
     accentBorder: "rgba(200,168,75,0.2)",
     badge: "In R&D",
+    isFeatured: false,
     variants: [],
     specs: {
       beratBersih: "—",
@@ -355,77 +329,87 @@ const ALL_PRODUCTS: UIProduct[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper functions
-// Sprint 4: ubah fungsi-fungsi ini menjadi async + Supabase fetch
+// Core fetch function
+// FIX: createClient() di Next.js 15+ / 16 adalah ASYNC karena cookies()
+//      dari next/headers sudah async. Wajib: await createClient()
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Semua produk — dipakai untuk JSON-LD, sitemap, dan generateStaticParams
- */
-export function getAllProducts(): UIProduct[] {
-  return ALL_PRODUCTS;
+async function fetchAll(): Promise<UIProduct[]> {
+  try {
+    // KUNCI: await createClient() — bukan createClient()
+    const supabase = await createClient();
+
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, product_variants(*)")
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (error || !data || data.length === 0) {
+      console.warn(
+        "[products] Supabase error atau data kosong, pakai fallback:",
+        error?.message,
+      );
+      return FALLBACK;
+    }
+
+    return data.map(mapSupabaseToUIProduct);
+  } catch (err) {
+    console.error("[products] Unexpected error, pakai fallback:", err);
+    return FALLBACK;
+  }
 }
 
-/**
- * Produk featured — semua yang isFeatured: true (Biochar, Compost, Bio-briquettes)
- * Dipakai oleh Featured carousel di ProductsFeaturedSection
- * Sprint 4: query products WHERE is_featured = true ORDER BY sort_order
- */
-export function getFeaturedProducts(): UIProduct[] {
-  return ALL_PRODUCTS.filter((p) => p.isFeatured === true);
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API — semua async, semua call fetchAll() internal
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getAllProducts(): Promise<UIProduct[]> {
+  return fetchAll();
 }
 
-/**
- * Backward compatible — masih dipakai jika ada kode lama yang import ini
- * Sprint 4: hapus dan ganti dengan getFeaturedProducts()
- */
-export function getFeaturedProduct(): UIProduct {
-  return ALL_PRODUCTS.find((p) => p.isFeatured) ?? ALL_PRODUCTS[0];
+export async function getFeaturedProducts(): Promise<UIProduct[]> {
+  const all = await fetchAll();
+  return all.filter((p) => p.isFeatured === true);
 }
 
-/**
- * Produk untuk catalog grid — semua yang tidak featured
- * Sprint 4: query products WHERE is_featured = false AND is_active = true
- */
-export function getCatalogProducts(): UIProduct[] {
-  return ALL_PRODUCTS.filter((p) => !p.isFeatured);
+export async function getFeaturedProduct(): Promise<UIProduct> {
+  const featured = await getFeaturedProducts();
+  return featured[0] ?? FALLBACK[0];
 }
 
-/**
- * Produk catalog berdasarkan kategori — dipakai oleh tab filter
- * category: "all" | "soil-amendment" | "energy" | "ecogoods" | "raw-materials"
- * Sprint 4: query products WHERE category = category AND is_featured = false
- */
-export function getCatalogByCategory(category: string): UIProduct[] {
-  const catalog = getCatalogProducts();
+export async function getCatalogProducts(): Promise<UIProduct[]> {
+  const all = await fetchAll();
+  return all.filter((p) => !p.isFeatured);
+}
+
+export async function getCatalogByCategory(
+  category: string,
+): Promise<UIProduct[]> {
+  const catalog = await getCatalogProducts();
   if (category === "all") return catalog;
   return catalog.filter((p) => p.category === category);
 }
 
-/**
- * Produk berdasarkan slug URL
- * Sprint 4: query products WHERE slug = slug
- */
-export function getProductBySlug(slug: string): UIProduct | null {
-  return ALL_PRODUCTS.find((p) => p.slug === slug) ?? null;
+export async function getProductBySlug(
+  slug: string,
+): Promise<UIProduct | null> {
+  const all = await fetchAll();
+  return all.find((p) => p.slug === slug) ?? null;
 }
 
-/**
- * Semua slug yang valid — dipakai oleh generateStaticParams di [slug]/page.tsx
- */
-export function getAllProductSlugs(): string[] {
-  return ALL_PRODUCTS.map((p) => slugify(p.name));
+export async function getAllProductSlugs(): Promise<string[]> {
+  const all = await fetchAll();
+  return all.map((p) => p.slug);
 }
 
-/**
- * Produk terkait — produk dari kategori yang sama, kecuali yang sedang dilihat
- * Sprint 4: query produk dengan category yang sama
- */
-export function getRelatedProducts(currentId: string): UIProduct[] {
-  const current = ALL_PRODUCTS.find((p) => p.id === currentId);
-  if (!current)
-    return ALL_PRODUCTS.filter((p) => p.id !== currentId).slice(0, 3);
-  return ALL_PRODUCTS.filter(
-    (p) => p.id !== currentId && p.category === current.category,
-  ).slice(0, 3);
+export async function getRelatedProducts(
+  currentId: string,
+): Promise<UIProduct[]> {
+  const all = await fetchAll();
+  const current = all.find((p) => p.id === currentId);
+  if (!current) return all.filter((p) => p.id !== currentId).slice(0, 3);
+  return all
+    .filter((p) => p.id !== currentId && p.category === current.category)
+    .slice(0, 3);
 }

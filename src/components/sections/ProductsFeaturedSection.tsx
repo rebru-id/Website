@@ -7,25 +7,28 @@ import { useCart } from "@/context/CartContext";
 import { useToast } from "@/components/ui/Toast";
 import { useInView } from "@/hooks/useInView";
 import { AccordionItem } from "@/components/ui/Accordion";
-import { getFeaturedProducts } from "@/lib/products";
+
 import type { UIProduct } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data — diambil dari lib/products (single source of truth)
 // Sprint 4: getFeaturedProducts() akan fetch dari Supabase
 // ─────────────────────────────────────────────────────────────────────────────
-const FEATURED_PRODUCTS: UIProduct[] = getFeaturedProducts();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main — Featured Carousel
 // ─────────────────────────────────────────────────────────────────────────────
-export default function ProductsFeaturedSection() {
+interface Props {
+  products: UIProduct[];
+}
+
+export default function ProductsFeaturedSection({ products }: Props) {
   const { ref, inView } = useInView(0.08);
 
   // ── Carousel state ──
   const [currentIndex, setCurrentIndex] = useState(0);
-  const product = FEATURED_PRODUCTS[currentIndex];
-  const total = FEATURED_PRODUCTS.length;
+  const product = products[currentIndex];
+  const total = products.length;
 
   function goTo(index: number) {
     setCurrentIndex((index + total) % total);
@@ -39,7 +42,7 @@ export default function ProductsFeaturedSection() {
 
   // Reset state saat pindah produk
   function handleGoTo(index: number) {
-    const next = FEATURED_PRODUCTS[(index + total) % total];
+    const next = products[(index + total) % total];
     setSelectedVariant(next.variants[0] ?? null);
     setQty(1);
     goTo(index);
@@ -115,7 +118,7 @@ export default function ProductsFeaturedSection() {
           <div className="flex items-center gap-4">
             {/* Dots */}
             <div className="flex items-center gap-2">
-              {FEATURED_PRODUCTS.map((_, i) => (
+              {products.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => handleGoTo(i)}

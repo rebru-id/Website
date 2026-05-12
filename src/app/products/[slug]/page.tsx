@@ -1,13 +1,12 @@
 // src/app/products/[slug]/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Halaman detail produk — /products/[slug]
+// Sprint 4A: Semua product functions sekarang async — perlu di-await
 //
-// generateStaticParams: pre-render semua slug saat build (Static Site Generation)
-// generateMetadata: metadata dinamis per produk (title, description, OG tags)
-//
-// Sprint 4: ubah ke dynamic rendering saat data dari Supabase
-//   export const dynamic = "force-dynamic"
-//   atau gunakan revalidate untuk ISR
+// PERUBAHAN dari versi sebelumnya:
+//   - generateStaticParams: await getAllProductSlugs()
+//   - generateMetadata: await getProductBySlug()
+//   - Page component: async + await getProductBySlug + getRelatedProducts
+//   - JSON-LD: pakai product.slug langsung (bukan slugify)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { notFound } from "next/navigation";
@@ -25,18 +24,18 @@ import {
   getAllProductSlugs,
   getRelatedProducts,
 } from "@/lib/products";
-import { slugify } from "@/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Static Generation — pre-render semua halaman detail saat build
+// Static Generation — pre-render semua slug saat build
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function generateStaticParams() {
-  return getAllProductSlugs().map((slug) => ({ slug }));
+export async function generateStaticParams() {
+  const slugs = await getAllProductSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dynamic Metadata — title dan description unik per produk
+// Dynamic Metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
@@ -44,13 +43,12 @@ export async function generateMetadata({
 }: {
   params: { slug: string };
 }): Promise<Metadata> {
-  const product = getProductBySlug(params.slug);
+  const product = await getProductBySlug(params.slug);
   if (!product) return { title: "Produk Tidak Ditemukan — Rebru" };
 
   const baseUrl = "https://rebru.id";
-  const productUrl = `${baseUrl}/products/${params.slug}`;
+  const productUrl = `${baseUrl}/products/${product.slug}`;
 
-  // Harga terendah untuk meta description
   const lowestPrice =
     product.variants.length > 0
       ? Math.min(...product.variants.map((v) => v.price))
@@ -71,7 +69,6 @@ export async function generateMetadata({
       locale: "id_ID",
       type: "website",
     },
-    // JSON-LD untuk halaman detail produk individual
     other: {
       "script:ld+json": JSON.stringify({
         "@context": "https://schema.org",
@@ -100,20 +97,21 @@ export async function generateMetadata({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page Component
+// Page Component — async
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function ProductDetailPage({
+export default async function ProductDetailPage({
   params,
 }: {
   params: { slug: string };
 }) {
-  const product = getProductBySlug(params.slug);
+  // Fetch paralel — product + related sekaligus
+  const [product, related] = await Promise.all([
+    getProductBySlug(params.slug),
+    getRelatedProducts(params.slug).catch(() => []),
+  ]);
 
-  // Redirect ke 404 jika slug tidak valid
   if (!product) notFound();
-
-  const related = getRelatedProducts(product.id);
 
   return (
     <>
@@ -128,8 +126,6 @@ export default function ProductDetailPage({
         </ErrorBoundary>
       </main>
       <Footer />
-
-      {/* Cart UI — sama seperti /products */}
       <ErrorBoundary>
         <FloatingCartButton />
         <CartDrawer />

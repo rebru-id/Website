@@ -9,8 +9,6 @@ import { useInView } from "@/hooks/useInView";
 import { AccordionItem } from "@/components/ui/Accordion";
 import type { UIProduct } from "@/types";
 
-import { getCatalogByCategory } from "@/lib/products";
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab definitions — tambah entry baru di sini untuk kategori baru
 // ─────────────────────────────────────────────────────────────────────────────
@@ -379,13 +377,20 @@ function ProductCard({
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
-export default function ProductsCatalogSection() {
+interface Props {
+  products: UIProduct[];
+}
+
+export default function ProductsCatalogSection({ products }: Props) {
   const { ref: headerRef, inView: headerInView } = useInView(0.06);
   const { ref: gridRef, inView: gridInView } = useInView(0.04);
 
   // ── Tab filter state ──
   const [activeTab, setActiveTab] = useState<TabKey>("all");
-  const filteredProducts = getCatalogByCategory(activeTab);
+  const filteredProducts =
+    activeTab === "all"
+      ? products
+      : products.filter((p) => p.category === activeTab);
 
   return (
     <section
@@ -427,7 +432,10 @@ export default function ProductsCatalogSection() {
           style={{ transitionDelay: "100ms" }}
         >
           {TABS.map((tab) => {
-            const count = getCatalogByCategory(tab.key).length;
+            const count =
+              tab.key === "all"
+                ? products.length
+                : products.filter((p) => p.category === tab.key).length;
             const isActive = activeTab === tab.key;
             return (
               <button
@@ -484,27 +492,6 @@ export default function ProductsCatalogSection() {
               </p>
             </div>
           )}
-        </div>
-
-        {/* Supabase note */}
-        <div
-          className={`mt-12 flex items-center justify-center gap-3 transition-all duration-700 ${gridInView ? "opacity-100" : "opacity-0"}`}
-          style={{ transitionDelay: "700ms" }}
-        >
-          <span
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "var(--forest-sage)" }}
-          />
-          <p
-            className="font-mono text-[0.65rem] tracking-[0.15em] uppercase"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Harga & stok akan sync otomatis dari Supabase pada Sprint 4
-          </p>
-          <span
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "var(--forest-sage)" }}
-          />
         </div>
       </div>
     </section>

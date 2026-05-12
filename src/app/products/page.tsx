@@ -1,9 +1,10 @@
 // src/app/products/page.tsx
+// FIX: buildJsonLd() — getAllProducts() sekarang async, wajib await
+
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import AuthModal from "@/components/dashboard/AuthModal";
 import DashboardOverlay from "@/components/dashboard/DashboardOverlay";
-
 import ProductsHeroSection from "@/components/sections/ProductsHeroSection";
 import ProductsFeaturedSection from "@/components/sections/ProductsFeaturedSection";
 import ProductsCatalogSection from "@/components/sections/ProductsCatalogSection";
@@ -11,8 +12,11 @@ import CtaBannerSection from "@/components/sections/CtaBannerSection";
 import FloatingCartButton from "@/components/cart/FloatingCartButton";
 import CartDrawer from "@/components/cart/CartDrawer";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { getAllProducts } from "@/lib/products";
-import { slugify } from "@/utils";
+import {
+  getAllProducts,
+  getFeaturedProducts,
+  getCatalogProducts,
+} from "@/lib/products";
 
 export const metadata = {
   title: "Products — Rebru",
@@ -20,14 +24,9 @@ export const metadata = {
     "Biochar, compost, bio-briquettes, and sustainable raw materials made from spent coffee grounds. Circular economy products from Makassar.",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JSON-LD Structured Data
-// Format: ItemList → setiap produk sebagai ListItem berisi Product schema
-// Membuka kemungkinan rich results di Google Search dan Google Shopping
-// ─────────────────────────────────────────────────────────────────────────────
-
-function buildJsonLd() {
-  const products = getAllProducts();
+async function buildJsonLd() {
+  // FIX: tambah await — getAllProducts() sekarang async
+  const products = await getAllProducts();
   const baseUrl = "https://rebru.id";
 
   return {
@@ -41,10 +40,10 @@ function buildJsonLd() {
       position: index + 1,
       item: {
         "@type": "Product",
-        "@id": `${baseUrl}/products/${slugify(product.name)}`,
+        "@id": `${baseUrl}/products/${product.slug}`,
         name: product.name,
         description: product.tagline,
-        url: `${baseUrl}/products/${slugify(product.name)}`,
+        url: `${baseUrl}/products/${product.slug}`,
         brand: { "@type": "Brand", name: "Rebru" },
         offers:
           product.variants.length > 0
@@ -74,27 +73,24 @@ function buildJsonLd() {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Page
-// ─────────────────────────────────────────────────────────────────────────────
+export default async function ProductsPage() {
+  const [featured, catalog, jsonLd] = await Promise.all([
+    getFeaturedProducts(),
+    getCatalogProducts(),
+    buildJsonLd(),
+  ]);
 
-export default function ProductsPage() {
   return (
     <>
-      {/* JSON-LD Structured Data — dibaca Google untuk rich results */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(buildJsonLd()) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-
       <AuthModal />
       <DashboardOverlay />
       <Navbar />
       <main>
-        {/* Hero tidak di-wrap — kalau crash, lebih baik terlihat daripada halaman kosong */}
         <ProductsHeroSection />
-
-        {/* Featured dan Catalog di-wrap terpisah — crash satu tidak mematikan yang lain */}
         <ErrorBoundary
           fallback={
             <div
@@ -107,9 +103,8 @@ export default function ProductsPage() {
             </div>
           }
         >
-          <ProductsFeaturedSection />
+          <ProductsFeaturedSection products={featured} />
         </ErrorBoundary>
-
         <ErrorBoundary
           fallback={
             <div
@@ -122,14 +117,11 @@ export default function ProductsPage() {
             </div>
           }
         >
-          <ProductsCatalogSection />
+          <ProductsCatalogSection products={catalog} />
         </ErrorBoundary>
-
         <CtaBannerSection />
       </main>
       <Footer />
-
-      {/* Cart UI — hanya di halaman Products */}
       <ErrorBoundary>
         <FloatingCartButton />
         <CartDrawer />
