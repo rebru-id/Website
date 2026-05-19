@@ -3,9 +3,11 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useToast } from "@/components/ui/Toast";
 import { buildCartMessage, buildWhatsAppOrderURL } from "@/services/order";
+import { insertOrder, type OrderSource } from "@/services/order-supabase";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skeleton — placeholder saat data loading (Sprint 4: pass isLoading dari hook)
@@ -252,6 +254,7 @@ export default function CartDrawer({ isLoading = false }: CartDrawerProps) {
   const { items, isOpen, closeCart, grandTotal, totalItems, clearCart } =
     useCart();
   const toast = useToast();
+  const pathname = usePathname();
 
   // State konfirmasi clearCart — inline confirm tanpa modal baru
   const [confirmClear, setConfirmClear] = useState(false);
@@ -276,12 +279,31 @@ export default function CartDrawer({ isLoading = false }: CartDrawerProps) {
   // 1. Buka WA di tab baru
   // 2. Tampilkan feedback "Pesanan dikirim"
   // 3. Setelah 1.5 detik: kosongkan cart + tutup drawer
-  function handleCheckout() {
+  // ── Checkout handler (Sprint 4B) ──────────────────────────────────────────
+  // Alur:
+  //   1. Tentukan source (website vs bio-link) dari pathname
+  //   2. Insert ke Supabase — FIRE AND FORGET (tidak blokir WA)
+  //   3. Buka WhatsApp segera tanpa menunggu insert selesai
+  //   4. Tampilkan feedback visual + bersihkan cart
+  async function handleCheckout() {
     if (isCheckingOut || checkoutDone) return;
 
+    // Deteksi source otomatis dari URL — tidak perlu props tambahan
+    const source: OrderSource = pathname?.startsWith("/ig")
+      ? "/ig"
+      : "/products";
+
+    // Build WA URL sebelum operasi async
     const message = buildCartMessage(items, grandTotal);
     const url = buildWhatsAppOrderURL(message);
 
+    // Insert ke Supabase di background — tidak blokir redirect WA
+    // Jika gagal: hanya di-log, user tidak terpengaruh
+    insertOrder(items, grandTotal, source).catch((err) => {
+      console.error("[CartDrawer] insertOrder silently failed:", err);
+    });
+
+    // Buka WhatsApp segera (tidak menunggu Supabase)
     window.open(url, "_blank", "noopener,noreferrer");
 
     setIsCheckingOut(true);
