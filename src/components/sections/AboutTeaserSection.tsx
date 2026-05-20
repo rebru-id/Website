@@ -69,14 +69,14 @@ const CONTEXT_CARDS = [
       </svg>
     ),
     label: "Company Profile",
-    value: "Est. 2024 · Makassar",
+    value: "Est. 2025 · Makassar",
     sublabel: "Sulawesi Selatan · Operasional Aktif",
   },
 ] as const;
 
 /* ─── Stat row data — tidak berubah dari versi sebelumnya ─────────────────── */
 const STATS = [
-  { value: "2024", label: "Founded" },
+  { value: "2025", label: "Founded" },
   { value: "4+", label: "Products" },
   { value: "100%", label: "Organic" },
 ] as const;
