@@ -202,6 +202,14 @@
   --about-orbit-glow: rgba(196, 149, 106, 0.08);
   --about-step-divider: var(--border-default);
   --about-values-glow: rgba(74, 44, 26, 0.12);
+
+  --about-signal-bg: rgba(196, 149, 106, 0.04);
+  --about-signal-border: rgba(196, 149, 106, 0.1);
+  --about-signal-icon-bg: rgba(196, 149, 106, 0.08);
+  --about-signal-icon-border: rgba(196, 149, 106, 0.15);
+  --about-signal-label: var(--text-muted); /* mono label — subtle */
+  --about-signal-value: var(--text-primary); /* headline value — readable */
+  --about-signal-sub: var(--text-secondary); /* sublabel — secondary */
 }
 
 /* ── LIGHT MODE ───────────────────────────────────────────────────────────────
@@ -361,6 +369,14 @@
   --about-orbit-glow: rgba(74, 44, 26, 0.06);
   --about-step-divider: var(--border-default);
   --about-values-glow: rgba(196, 149, 106, 0.08);
+
+  --about-signal-bg: rgba(74, 44, 26, 0.04);
+  --about-signal-border: rgba(74, 44, 26, 0.1);
+  --about-signal-icon-bg: rgba(184, 132, 79, 0.1);
+  --about-signal-icon-border: rgba(184, 132, 79, 0.2);
+  --about-signal-label: var(--text-muted);
+  --about-signal-value: var(--text-primary);
+  --about-signal-sub: var(--text-secondary);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

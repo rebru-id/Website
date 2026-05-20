@@ -45,7 +45,7 @@ export async function insertOrder(
   }
 
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
 
     // ── Step 1: Generate UUID di browser ──────────────────────────────────────
     // crypto.randomUUID() tersedia di semua browser modern + Node.js 14.17+
