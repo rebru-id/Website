@@ -2,23 +2,42 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Sprint 4B — Pencatatan order ke Supabase sebelum redirect ke WhatsApp
 //
-// FIX dari versi sebelumnya:
-//   SEBELUM: .insert({...}).select("id").single()
-//     → Supabase melakukan INSERT lalu SELECT kembali row tersebut
-//     → SELECT butuh SELECT RLS policy yang tidak ada
-//     → Error: "new row violates row-level security policy"
+// POLA: lazy singleton dari @supabase/supabase-js — identik dengan
+//       partnership.ts dan supabase-contact.ts yang sudah terbukti bekerja.
 //
-//   SESUDAH: crypto.randomUUID() + .insert({ id: orderId, ... })
-//     → UUID di-generate di browser (tidak perlu baca balik dari DB)
-//     → Hanya butuh INSERT policy (sudah ada: anon_insert_orders)
-//     → Tidak ada RLS conflict
+// MENGAPA tidak pakai @/lib/supabase/client:
+//   File client.ts di Website menggunakan createServerClient + next/headers
+//   yang HANYA boleh dipakai di Server Component. CartDrawer adalah
+//   "use client" → import chain-nya tidak boleh menyentuh next/headers.
 //
-// Pola ini identik dengan supabase-contact.ts yang sudah bekerja:
-//   insertContactMessage() → .insert({...}) tanpa .select() → works ✅
+// MENGAPA lazy singleton:
+//   createClient() dari @supabase/supabase-js aman dipanggil di module level
+//   HANYA jika process.env sudah tersedia saat itu. Lazy singleton memastikan
+//   client dibuat saat fungsi pertama kali dipanggil (runtime browser),
+//   bukan saat module di-evaluate oleh bundler (build time).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createClient } from "@/lib/supabase/client";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { CartItem } from "@/types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Supabase Client — Lazy Singleton
+// Hardcode fallback aman karena NEXT_PUBLIC_ anon key memang publik by design
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SUPABASE_URL = "https://mubzwqkhhhittibstugh.supabase.co";
+const SUPABASE_ANON =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11Ynp3cWtoaGhpdHRpYnN0dWdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMTA5NjYsImV4cCI6MjA5MDY4Njk2Nn0.C_YqDM0OFAVc9zww5afq9S0po2n7KzZGW9HhzNsMcrE";
+
+let _supabase: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (_supabase) return _supabase;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? SUPABASE_ANON;
+  _supabase = createClient(url, key);
+  return _supabase;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -45,12 +64,11 @@ export async function insertOrder(
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = getSupabase(); // sync — tidak perlu await
 
-    // ── Step 1: Generate UUID di browser ──────────────────────────────────────
+    // ── Step 1: Generate UUID di browser, insert tanpa .select() ─────────────
     // crypto.randomUUID() tersedia di semua browser modern + Node.js 14.17+
-    // Dengan set id eksplisit, tidak perlu .select() setelah insert
-    // → tidak butuh SELECT RLS policy → tidak ada RLS conflict
+    // Tidak chain .select() → tidak butuh SELECT RLS policy
     const orderId = crypto.randomUUID();
 
     const { error: orderError } = await supabase.from("orders").insert({
@@ -63,13 +81,10 @@ export async function insertOrder(
 
     if (orderError) {
       console.error("[order-supabase] insert orders:", orderError.message);
-      return {
-        orderId: null,
-        error: new Error(orderError.message),
-      };
+      return { orderId: null, error: new Error(orderError.message) };
     }
 
-    // ── Step 2: Bulk insert order_items ───────────────────────────────────────
+    // ── Step 2: Bulk insert order_items ──────────────────────────────────────
     const orderItems = items.map((item) => ({
       order_id: orderId,
       product_id: item.product_id,
