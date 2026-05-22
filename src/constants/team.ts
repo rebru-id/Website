@@ -167,7 +167,7 @@ export const CORE_TEAM: TeamMember[] = [
     name: "Lisa Wulandari",
     role: "Research & Development Associate",
     location: "Makassar, ID",
-    photo: null,
+    photo: "/team/lisa.png",
     initials: "LW",
     tagline:
       "Advancing sustainable product development through research and collaborative innovation.",
