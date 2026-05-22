@@ -1,3 +1,4 @@
+//
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import AuthModal from "@/components/dashboard/AuthModal";
@@ -5,6 +6,7 @@ import DashboardOverlay from "@/components/dashboard/DashboardOverlay";
 
 import AboutHeroSection from "@/components/sections/AboutHeroSection";
 import AboutMissionSection from "@/components/sections/AboutMissionSection";
+import AboutTeamSection from "@/components/sections/AboutTeamSection";
 import AboutProcessSection from "@/components/sections/AboutProcessSection";
 import AboutValuesSection from "@/components/sections/AboutValuesSection";
 import CtaBannerSection from "@/components/sections/CtaBannerSection";
@@ -24,6 +26,7 @@ export default function AboutPage() {
       <main>
         <AboutHeroSection />
         <AboutMissionSection />
+        <AboutTeamSection />
         <AboutProcessSection />
         <AboutValuesSection />
         <CtaBannerSection />
