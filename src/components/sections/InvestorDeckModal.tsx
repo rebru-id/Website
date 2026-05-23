@@ -145,7 +145,7 @@ export default function InvestorDeckModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center sm:p-4"
       style={{
         background: "rgba(10, 6, 4, 0.78)",
         backdropFilter: "blur(6px)",
@@ -157,15 +157,24 @@ export default function InvestorDeckModal({
     >
       {/* Panel */}
       <div
-        className="relative w-full max-w-[520px] rounded-xl overflow-hidden"
+        className="relative w-full sm:max-w-[520px] rounded-t-2xl sm:rounded-xl flex flex-col"
         style={{
           background: "var(--bg-surface)",
           border: "1px solid var(--border-default)",
           boxShadow:
-            "0 32px 80px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(196,149,106,0.1)",
+            "0 -8px 40px rgba(0,0,0,0.4), 0 32px 80px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(196,149,106,0.1)",
+          maxHeight: "85dvh",
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle — mobile only (bottom sheet indicator) */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div
+            className="w-10 h-1 rounded-full"
+            style={{ background: "var(--border-default)" }}
+          />
+        </div>
+
         {/* Top accent line */}
         <div
           className="absolute top-0 left-[15%] right-[15%] h-px"
@@ -177,7 +186,7 @@ export default function InvestorDeckModal({
 
         {/* Header */}
         <div
-          className="px-8 pt-8 pb-6"
+          className="px-8 pt-6 pb-6 flex-shrink-0"
           style={{ borderBottom: "1px solid var(--border-subtle)" }}
         >
           <div className="flex items-start justify-between gap-4">
@@ -256,8 +265,9 @@ export default function InvestorDeckModal({
           <SuccessState onClose={onClose} email={form.email} />
         ) : (
           <form
+            id="deck-form"
             onSubmit={handleSubmit}
-            className="px-8 py-7 flex flex-col gap-5"
+            className="px-6 sm:px-8 py-6 sm:py-7 flex flex-col gap-5 overflow-y-auto flex-1 overscroll-contain"
             noValidate
           >
             {/* Full Name */}

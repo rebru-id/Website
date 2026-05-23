@@ -44,7 +44,7 @@ export const FOUNDERS: TeamMember[] = [
   {
     id: "founder-musawwir",
     name: "Musawwir Muhtar",
-    role: "CEO & Founder",
+    role: "CEO",
     location: "Makassar, ID",
     photo: "/team/awir.png", // ganti dengan "/team/musawwir.jpg"
     initials: "MM",
@@ -178,7 +178,7 @@ export const CORE_TEAM: TeamMember[] = [
       "Circular Economy Innovation",
       "Research Presentation & Public Communication",
     ],
-    tags: ["R&D", "Development", "Sustainability", "Communication"],
+    tags: ["Research", "Development", "Sustainability", "Communication"],
     linkedin: "",
     badge: "Research Team",
     ...COLOR_PRESETS.sage,
