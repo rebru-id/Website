@@ -68,7 +68,7 @@ export const FOUNDERS: TeamMember[] = [
     name: "Rinto Alam Nuari",
     role: "COO & CTO",
     location: "Makassar, ID",
-    photo: null, // ganti dengan "/team/alam.jpg"
+    photo: "/team/alam.png",
     initials: "RAN",
     tagline:
       "Connecting operational execution with sustainable system development.",
