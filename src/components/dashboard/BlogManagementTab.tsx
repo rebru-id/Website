@@ -1037,8 +1037,23 @@ export default function BlogManagementTab() {
     setEditingPost(null);
   };
 
+  const publishedCount = posts.filter((p) => p.published).length;
+  const draftCount = posts.filter((p) => !p.published).length;
+
   return (
     <div className="relative">
+      {/* ── Section header ──────────────────────────────────────────────── */}
+      <div className="dash-section-header">
+        <h2 className="dash-section-title">Blog Management</h2>
+        <p className="dash-section-sub">
+          {view === "editor"
+            ? isNew
+              ? "Artikel baru"
+              : `Edit · ${editingPost?.title ?? ""}`
+            : `${posts.length} artikel · ${publishedCount} published · ${draftCount} draft`}
+        </p>
+      </div>
+
       {/* ── Toast notification ──────────────────────────────────────────── */}
       {toast && (
         <div

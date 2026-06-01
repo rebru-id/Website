@@ -1092,9 +1092,10 @@ export default function DashboardOverlay() {
 
   if (!session) return null;
 
-  // Collector memiliki halaman operasional tersendiri di /collector.
+  // Admin dan Collector memiliki halaman operasional tersendiri.
   // DashboardOverlay tidak dirancang untuk mereka — kembalikan null
   // agar overlay tidak terbuka dan tidak ada tab yang perlu dirender.
+  if (session.role === "admin") return null;
   if (session.role === "collector") return null;
 
   const tabs = TABS_BY_ROLE[session.role];

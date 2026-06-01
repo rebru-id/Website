@@ -1,13 +1,15 @@
 "use client";
 // src/components/collector/CollectorNavbar.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Navbar khusus collector — berbeda dari Navbar.tsx marketing.
-// Tidak ada link navigasi produk/blog. Fokus pada:
-//   - Identitas collector (nama + role)
-//   - Progress shift hari ini (kg + stop)
-//   - Status koneksi online
-//   - Tombol logout
-// Muncul hanya ketika session.role === "collector"
+// MIGRATION: Tombol logout diperbarui untuk Supabase Auth
+//
+// Perubahan dari versi sebelumnya:
+//   1. Destruktur `logout` dari useAuthModal() — bukan `setSession`
+//   2. Tombol Logout memanggil logout() langsung (async, fire-and-forget)
+//      logout() di AuthModalContext sudah handle: signOut + setSession(null)
+//   3. Hapus inline code yang tidak valid secara sintaks JSX
+//
+// Tidak ada perubahan lain — UI, props, dan logika navbar tidak berubah.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -28,7 +30,9 @@ export default function CollectorNavbar({
   stopsCompleted,
   totalStops,
 }: CollectorNavbarProps) {
-  const { setSession } = useAuthModal();
+  // logout() dari context sudah wrap supabase.auth.signOut() + setSession(null)
+  // Gunakan ini — JANGAN setSession(null) langsung
+  const { logout } = useAuthModal();
   const logoSrc = useLogo();
 
   // Ambil inisial dari nama: "Rizky Kahwa" → "RK"
@@ -51,7 +55,6 @@ export default function CollectorNavbar({
       }}
     >
       <div className="max-w-[1280px] mx-auto flex items-center justify-between px-6 md:px-12 h-14">
-
         {/* ── Kiri: Brand + breadcrumb ── */}
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2 shrink-0">
@@ -171,9 +174,9 @@ export default function CollectorNavbar({
             {initials}
           </div>
 
-          {/* Logout */}
+          {/* Logout — memanggil logout() dari context */}
           <button
-            onClick={() => setSession(null)}
+            onClick={logout}
             className="font-mono text-[0.62rem] tracking-[0.08em] uppercase px-3 py-1.5 rounded-md border text-text-muted hover:text-text-primary transition-all duration-200"
             style={{ borderColor: "var(--border-default)" }}
           >

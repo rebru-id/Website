@@ -2,194 +2,28 @@
 // src/app/collector/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 // Halaman khusus collector — route: /collector
-//
-// Auth flow:
-//   1. session null → tampil NotLoggedIn + tombol buka AuthModal
-//   2. session.role !== "collector" → tampil AccessDenied
-//   3. session.role === "collector" → render dashboard collector penuh
-//
-// Layout responsif:
-//   Mobile  → single column (RouteSection atas, HistorySection bawah)
-//   Desktop (lg+) → 2-kolom: RouteSection (flex-1), HistorySection (sidebar sticky)
-//
-// Metadata:
-//   Dihandle oleh src/app/collector/layout.tsx (Server Component)
-//   Tidak perlu dan tidak boleh export metadata di sini ("use client")
-//
-// Data:
-//   MOCK_* di bawah untuk development — ganti dengan Supabase fetch:
-//     GET /api/collector/route?date=today&collectorId=...
-//     GET /api/collector/history?collectorId=...
+// Semua operasi tanggal menggunakan @/utils/dateUtils (WITA-aware)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuthModal } from "@/components/dashboard/AuthModalContext";
 import CollectorNavbar from "@/components/collector/CollectorNavbar";
 import RouteSection from "@/components/collector/RouteSection";
 import HistorySection from "@/components/collector/HistorySection";
 import Footer from "@/components/layout/Footer";
+import {
+  fetchMyTodayRoute,
+  fetchCollectorHistory,
+  updateStopStatus,
+  type StopUpdatePayload,
+} from "@/lib/supabase-collector";
+import {
+  toRouteStop,
+  toWasteLog,
+  toWeeklyBars,
+} from "@/utils/collector-adapters";
+import { todayWITA, addDays, formatDate } from "@/utils/date";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK DATA — replace with Supabase fetch (Sprint 4)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MOCK_STOPS: RouteStop[] = [
-  {
-    id: "stop-1",
-    order: 1,
-    mitra_name: "Kopi Kenangan Panakkukang",
-    mitra_category: "cafe",
-    address: "Jl. Boulevard No.5, Panakkukang",
-    scheduled_time: "06:30",
-    estimated_kg: 12,
-    status: "done",
-    actual_kg: 12.5,
-    condition: "basah",
-    completed_at: "06:48",
-    location_coords: "-5.1477, 119.4328",
-    location_accuracy: 8,
-  },
-  {
-    id: "stop-2",
-    order: 2,
-    mitra_name: "Hotel Aryaduta Makassar",
-    mitra_category: "hotel",
-    address: "Jl. Somba Opu No.297, Makassar",
-    scheduled_time: "07:15",
-    estimated_kg: 8,
-    status: "done",
-    actual_kg: 8.0,
-    condition: "kering",
-    completed_at: "07:32",
-    location_coords: "-5.1392, 119.4173",
-    location_accuracy: 12,
-  },
-  {
-    id: "stop-3",
-    order: 3,
-    mitra_name: "Warung Makan Sari Laut",
-    mitra_category: "resto",
-    address: "Jl. Rappocini Raya No.44",
-    scheduled_time: "07:45",
-    estimated_kg: 6,
-    status: "skipped",
-    skip_reason: "Mitra tutup",
-  },
-  {
-    id: "stop-4",
-    order: 4,
-    mitra_name: "Café Phoenam",
-    mitra_category: "cafe",
-    address: "Jl. Ahmad Yani No.10, Makassar",
-    scheduled_time: "08:30",
-    estimated_kg: 14,
-    status: "pending",
-  },
-  {
-    id: "stop-5",
-    order: 5,
-    mitra_name: "Makassar Ramen House",
-    mitra_category: "resto",
-    address: "Jl. Pengayoman No.18, Panakkukang",
-    scheduled_time: "10:00",
-    estimated_kg: 7,
-    status: "pending",
-  },
-  {
-    id: "stop-6",
-    order: 6,
-    mitra_name: "Anomali Coffee Trans Studio",
-    mitra_category: "cafe",
-    address: "Trans Studio Mall Makassar, Lantai G",
-    scheduled_time: "11:30",
-    estimated_kg: 18,
-    status: "pending",
-  },
-  {
-    id: "stop-7",
-    order: 7,
-    mitra_name: "JW Marriott Makassar",
-    mitra_category: "hotel",
-    address: "Jl. Jend. Sudirman No.52, Makassar",
-    scheduled_time: "13:00",
-    estimated_kg: 22,
-    status: "pending",
-  },
-];
-
-const MOCK_WEEKLY: WeeklyBar[] = [
-  { day: "Sen", kg: 22, isToday: false },
-  { day: "Sel", kg: 31, isToday: false },
-  { day: "Rab", kg: 28, isToday: false },
-  { day: "Kam", kg: 19, isToday: false },
-  { day: "Jum", kg: 38, isToday: false },
-  { day: "Sab", kg: 41, isToday: false },
-  { day: "Hari", kg: 34.5, isToday: true },
-];
-
-const MOCK_HISTORY: WasteLog[] = [
-  {
-    id: "log-1",
-    mitra_name: "Kopi Kenangan Panakkukang",
-    mitra_category: "cafe",
-    date: "28 Apr",
-    time: "06:48",
-    kg: 12.5,
-    condition: "basah",
-    status: "verified",
-    has_photo: true,
-    location_coords: "-5.1477, 119.4328",
-  },
-  {
-    id: "log-2",
-    mitra_name: "Hotel Aryaduta Makassar",
-    mitra_category: "hotel",
-    date: "28 Apr",
-    time: "07:32",
-    kg: 8.0,
-    condition: "kering",
-    status: "pending",
-    has_photo: false,
-  },
-  {
-    id: "log-3",
-    mitra_name: "Warung Makan Sari Laut",
-    mitra_category: "resto",
-    date: "28 Apr",
-    time: "07:45",
-    kg: 0,
-    condition: null,
-    status: "skipped",
-    has_photo: false,
-    skip_reason: "Mitra tutup",
-  },
-  {
-    id: "log-4",
-    mitra_name: "Anomali Coffee Trans Studio",
-    mitra_category: "cafe",
-    date: "27 Apr",
-    time: "11:30",
-    kg: 18.5,
-    condition: "mix",
-    status: "verified",
-    has_photo: true,
-    notes: "Ampas espresso bar + filter, sudah dipisah dalam 2 sak",
-    location_coords: "-5.1512, 119.4411",
-  },
-  {
-    id: "log-5",
-    mitra_name: "JW Marriott Makassar",
-    mitra_category: "hotel",
-    date: "27 Apr",
-    time: "13:15",
-    kg: 22.0,
-    condition: "kering",
-    status: "verified",
-    has_photo: true,
-    location_coords: "-5.1368, 119.4167",
-  },
-];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth guard screens
@@ -260,45 +94,196 @@ function AccessDenied() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Loading skeleton
+// ─────────────────────────────────────────────────────────────────────────────
+
+function LoadingState() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: "var(--bg-primary)" }}
+    >
+      <div
+        className="flex items-center gap-3"
+        style={{ color: "var(--text-muted)" }}
+      >
+        <i className="fas fa-circle-notch fa-spin text-sm" />
+        <span
+          className="text-sm tracking-widest uppercase"
+          style={{ fontFamily: "var(--font-space-mono)" }}
+        >
+          Memuat rute...
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CollectorPage() {
   const { session, openModal } = useAuthModal();
-  const [currentStops, setCurrentStops] = useState<RouteStop[]>(MOCK_STOPS);
 
-  // Stats yang ditampilkan di CollectorNavbar — dihitung dari state live
-  const collectedKg = currentStops
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
+  const [historyLogs, setHistoryLogs] = useState<WasteLog[]>([]);
+  const [weeklyData, setWeeklyData] = useState<WeeklyBar[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [routeId, setRouteId] = useState<string | null>(null);
+
+  // ── Fetch data live dari Supabase ─────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    if (!session?.email) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      // todayWITA() mengembalikan tanggal hari ini dalam WITA (bukan UTC)
+      // Menggantikan: new Date().toISOString().split("T")[0]
+      const today = todayWITA();
+
+      const [routeResult, historyRaw] = await Promise.all([
+        fetchMyTodayRoute(session.email),
+        fetchCollectorHistory(session.email),
+      ]);
+
+      const stops = (routeResult.route?.stops ?? []).map(toRouteStop);
+      const logs = historyRaw.map(toWasteLog);
+
+      // WeeklyBar: kelompokkan per hari dari history
+      const routesByDay = groupHistoryByDay(historyRaw, today);
+      const bars = toWeeklyBars(routesByDay, today);
+
+      setRouteId(routeResult.route?.id ?? null);
+      setRouteStops(stops);
+      setHistoryLogs(logs);
+      setWeeklyData(bars.length > 0 ? bars : DEFAULT_WEEKLY_BARS);
+    } catch (err) {
+      console.error("CollectorPage: gagal memuat data:", err);
+      setError("Gagal memuat rute. Periksa koneksi dan coba refresh.");
+    } finally {
+      setLoading(false);
+    }
+  }, [session?.email]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ── Handler saat collector update stop ───────────────────────────────────
+  const handleStopsChange = useCallback(
+    async (updatedStops: RouteStop[]) => {
+      setRouteStops(updatedStops);
+
+      const justCompleted = updatedStops.find(
+        (s, i) => s.status !== "pending" && routeStops[i]?.status === "pending",
+      );
+
+      if (!justCompleted) return;
+
+      const payload: StopUpdatePayload = {
+        status: justCompleted.status as "done" | "skipped",
+        actual_kg: justCompleted.actual_kg,
+        condition: justCompleted.condition as StopUpdatePayload["condition"],
+        skip_reason: justCompleted.skip_reason,
+        location_coords: justCompleted.location_coords,
+        notes: justCompleted.notes,
+      };
+
+      try {
+        await updateStopStatus(justCompleted.id, payload);
+      } catch (err) {
+        console.error("Gagal menyimpan status stop:", err);
+        setRouteStops(routeStops);
+      }
+    },
+    [routeStops],
+  );
+
+  // ── Auth guards ────────────────────────────────────────────────────────────
+  if (!session) return <NotLoggedIn onLogin={openModal} />;
+  if (session.role !== "collector") return <AccessDenied />;
+  if (loading) return <LoadingState />;
+
+  // ── Stats untuk navbar ─────────────────────────────────────────────────────
+  const collectedKg = routeStops
     .filter((s) => s.status === "done")
     .reduce((acc, s) => acc + (s.actual_kg ?? 0), 0);
 
-  const stopsCompleted = currentStops.filter(
+  const stopsCompleted = routeStops.filter(
     (s) => s.status !== "pending",
   ).length;
-
-  // ── Auth guards ──
-  if (!session) return <NotLoggedIn onLogin={openModal} />;
-  if (session.role !== "collector") return <AccessDenied />;
 
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: "var(--bg-primary)" }}
     >
-      {/* Navbar operasional — berbeda dari Navbar marketing Rebru */}
       <CollectorNavbar
         collectorName={session.name}
         collectedKg={collectedKg}
         stopsCompleted={stopsCompleted}
-        totalStops={currentStops.length}
+        totalStops={routeStops.length}
       />
 
       <main className="flex-1 max-w-[1280px] mx-auto w-full px-4 md:px-12 py-8">
+        {/* Error banner */}
+        {error && (
+          <div
+            className="mb-6 px-4 py-3 rounded-lg flex items-center gap-3"
+            style={{
+              background: "rgba(248,113,113,0.08)",
+              border: "1px solid rgba(248,113,113,0.2)",
+            }}
+          >
+            <i
+              className="fas fa-exclamation-triangle text-sm"
+              style={{ color: "var(--color-error)" }}
+            />
+            <p
+              className="text-sm flex-1"
+              style={{ color: "var(--color-error)" }}
+            >
+              {error}
+            </p>
+            <button
+              onClick={loadData}
+              className="text-sm underline"
+              style={{ color: "var(--color-error)" }}
+            >
+              Coba lagi
+            </button>
+          </div>
+        )}
+
+        {/* Empty state jika tidak ada rute hari ini */}
+        {!loading && routeStops.length === 0 && !error && (
+          <div
+            className="mb-8 px-6 py-8 rounded-lg text-center"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-default)",
+            }}
+          >
+            <i
+              className="fas fa-route text-2xl mb-3 block"
+              style={{ color: "var(--text-muted)" }}
+            />
+            <p className="font-medium text-text-primary mb-1">
+              Belum ada jadwal untuk hari ini
+            </p>
+            <p className="text-sm text-text-muted">
+              Hubungi admin jika kamu seharusnya memiliki rute hari ini.
+            </p>
+          </div>
+        )}
+
         {/* Page header */}
         <div className="mb-8">
           <h1 className="font-display text-fluid-title text-text-primary font-semibold">
-            Log{" "}
-            <em className="text-coffee-latte not-italic">pengambilan</em>{" "}
+            Log <em className="text-coffee-latte not-italic">pengambilan</em>{" "}
             ampas kopi
           </h1>
           <p className="text-[0.82rem] text-text-muted mt-2">
@@ -307,10 +292,11 @@ export default function CollectorPage() {
               day: "numeric",
               month: "long",
               year: "numeric",
+              timeZone: "Asia/Makassar", // ← eksplisit WITA untuk display saja
             })}{" "}
             · Rute ditetapkan admin ·{" "}
             <span style={{ color: "var(--forest-sage)" }}>
-              {currentStops.length} stop hari ini
+              {routeStops.length} stop hari ini
             </span>
           </p>
         </div>
@@ -319,23 +305,52 @@ export default function CollectorPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8 items-start">
           <RouteSection
             collectorName={session.name}
-            routeDate={new Date().toISOString().split("T")[0]}
-            initialStops={MOCK_STOPS}
-            onStopsChange={setCurrentStops}
+            routeDate={todayWITA()}
+            initialStops={routeStops}
+            onStopsChange={handleStopsChange}
           />
 
-          {/* Sidebar sticky di desktop */}
           <div className="lg:sticky lg:top-[72px]">
-            <HistorySection
-              weeklyData={MOCK_WEEKLY}
-              historyLogs={MOCK_HISTORY}
-            />
+            <HistorySection weeklyData={weeklyData} historyLogs={historyLogs} />
           </div>
         </div>
       </main>
 
-      {/* Footer Rebru — tidak dimodifikasi */}
       <Footer />
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Kelompokkan history stops per hari → untuk WeeklyBar
+// Menggunakan todayWITA() sebagai fallback tanggal agar konsisten WITA
+function groupHistoryByDay(
+  history: (ReturnType<typeof toWasteLog> & { route_date?: string })[],
+  today: string,
+): any[] {
+  const byDay: Record<string, { route_date: string; total_actual_kg: number }> =
+    {};
+
+  history.forEach((h: any) => {
+    const d = h.route_date ?? today;
+    if (!byDay[d]) byDay[d] = { route_date: d, total_actual_kg: 0 };
+    byDay[d].total_actual_kg += h.kg ?? 0;
+  });
+
+  return Object.values(byDay)
+    .sort((a, b) => a.route_date.localeCompare(b.route_date))
+    .slice(-7);
+}
+
+const DEFAULT_WEEKLY_BARS: WeeklyBar[] = [
+  { day: "Sen", kg: 0, isToday: false },
+  { day: "Sel", kg: 0, isToday: false },
+  { day: "Rab", kg: 0, isToday: false },
+  { day: "Kam", kg: 0, isToday: false },
+  { day: "Jum", kg: 0, isToday: false },
+  { day: "Sab", kg: 0, isToday: false },
+  { day: "Hari", kg: 0, isToday: true },
+];

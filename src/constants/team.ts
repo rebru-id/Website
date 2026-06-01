@@ -66,7 +66,7 @@ export const FOUNDERS: TeamMember[] = [
   {
     id: "founder-alam",
     name: "Rinto Alam Nuari",
-    role: "COO & CTO",
+    role: "CTO",
     location: "Makassar, ID",
     photo: "/team/alam.png",
     initials: "RAN",
@@ -114,27 +114,26 @@ export const FOUNDERS: TeamMember[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 export const CORE_TEAM: TeamMember[] = [
   {
-    id: "team-fadli",
+    id: "founder-zulfadli",
     name: "Zulfadli Ibrahim",
-    role: "Engineering Design Lead",
+    role: "Head of Operations",
     location: "Makassar, ID",
     photo: "/team/fadli.png",
     initials: "ZI",
     tagline:
-      "Designing practical engineering systems to support sustainable innovation and development.",
-    bio: "Engineering professional and academic with experience in structural analysis, material systems, and engineering design development. Skilled in research-driven problem solving, technical modeling, and applied system analysis to support sustainable and scalable innovation initiatives. Actively contributes to engineering development processes through analytical approaches, design optimization, and collaborative project execution across research and operational environments.",
+      "Coordinating operational systems and execution to support scalable sustainability initiatives.",
+    bio: "Engineering professional and academic with experience in operational coordination, technical systems, and project execution across engineering and research environments. Skilled in analytical problem solving, workflow management, and system-oriented approaches to support efficient and scalable sustainability initiatives. Actively contributes to operational development through collaborative execution, process coordination, and practical implementation strategies.",
     expertise: [
-      "Engineering System Design",
-      "Structural & Material Analysis",
-      "Finite Element Analysis (FEA)",
-      "Research & Technical Development",
+      "Operational Systems Coordination",
+      "Engineering & Technical Planning",
+      "Workflow & Process Management",
+      "Research & Project Execution",
     ],
-    tags: ["Engineering", "Design", "Research", "Systems"],
+    tags: ["Operations", "Systems", "Execution", "Engineering"],
     linkedin: "#",
-    badge: "Engineering Team",
+    badge: "Operations Team",
     ...COLOR_PRESETS.sage,
   },
-
   {
     id: "team-ainun",
     name: "Ainun Rezkiva Arif",
