@@ -16,13 +16,14 @@ import {
   fetchCollectorHistory,
   updateStopStatus,
   type StopUpdatePayload,
+  type StopWithPartner,
 } from "@/lib/supabase-collector";
 import {
   toRouteStop,
   toWasteLog,
   toWeeklyBars,
 } from "@/utils/collector-adapters";
-import { todayWITA } from "@/utils/date";
+import { todayWITA } from "@/utils/dateUtils";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -326,19 +327,20 @@ export default function CollectorPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Kelompokkan history stops per hari → untuk WeeklyBar
-// Menggunakan todayWITA() sebagai fallback tanggal agar konsisten WITA
+// Input: raw StopWithPartner dari fetchCollectorHistory (bukan WasteLog)
+// Output: { route_date, total_actual_kg }[] — compatible dengan toWeeklyBars
 function groupHistoryByDay(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  history: any[], // StopWithPartner[] dari DB — route_date diakses via .route_date
+  history: (StopWithPartner & { route_date: string })[],
   today: string,
-): any[] {
+): { route_date: string; total_actual_kg: number }[] {
   const byDay: Record<string, { route_date: string; total_actual_kg: number }> =
     {};
 
-  history.forEach((h: any) => {
+  history.forEach((h) => {
     const d = h.route_date ?? today;
     if (!byDay[d]) byDay[d] = { route_date: d, total_actual_kg: 0 };
-    byDay[d].total_actual_kg += h.kg ?? 0;
+    // Gunakan actual_kg (field di StopWithPartner), bukan kg (field di WasteLog)
+    byDay[d].total_actual_kg += h.actual_kg ?? 0;
   });
 
   return Object.values(byDay)

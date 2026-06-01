@@ -10,10 +10,7 @@
 //   - Adapter = satu-satunya tempat konversi, mudah di-test dan diupdate
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type {
-  StopWithPartner,
-  RouteWithCollector,
-} from "@/lib/supabase-collector";
+import type { StopWithPartner } from "@/lib/supabase-collector";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ── StopWithPartner → RouteStop ──────────────────────────────────────────────
@@ -93,11 +90,21 @@ export function toWasteLog(
   };
 }
 
-// ── RouteWithCollector → WeeklyBar[] ─────────────────────────────────────────
+// ── WeeklyBar input type ──────────────────────────────────────────────────────
+// toWeeklyBars hanya butuh dua field: route_date dan total_actual_kg.
+// Menggunakan structural type (bukan RouteWithCollector) agar kompatibel dengan:
+//   - RouteWithCollector[] dari fetchCollectorStats (admin)
+//   - { route_date, total_actual_kg }[] dari groupHistoryByDay (collector page)
+type DailyKgRecord = {
+  route_date: string;
+  total_actual_kg: number;
+};
+
+// ── WeeklyBar input type ──────────────────────────────────────────────────────
 // Menghitung kg per hari dari riwayat rute collector.
 
 export function toWeeklyBars(
-  routes: RouteWithCollector[],
+  routes: DailyKgRecord[],
   today: string,
 ): WeeklyBar[] {
   const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
