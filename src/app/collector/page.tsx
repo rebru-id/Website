@@ -22,7 +22,7 @@ import {
   toWasteLog,
   toWeeklyBars,
 } from "@/utils/collector-adapters";
-import { todayWITA, addDays, formatDate } from "@/utils/date";
+import { todayWITA } from "@/utils/date";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,7 +328,8 @@ export default function CollectorPage() {
 // Kelompokkan history stops per hari → untuk WeeklyBar
 // Menggunakan todayWITA() sebagai fallback tanggal agar konsisten WITA
 function groupHistoryByDay(
-  history: (ReturnType<typeof toWasteLog> & { route_date?: string })[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  history: any[], // StopWithPartner[] dari DB — route_date diakses via .route_date
   today: string,
 ): any[] {
   const byDay: Record<string, { route_date: string; total_actual_kg: number }> =
