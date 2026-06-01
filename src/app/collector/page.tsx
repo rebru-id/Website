@@ -23,7 +23,7 @@ import {
   toWasteLog,
   toWeeklyBars,
 } from "@/utils/collector-adapters";
-import { todayWITA } from "@/utils/dateUtils";
+import { todayWITA } from "@/utils/date";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ─────────────────────────────────────────────────────────────────────────────
