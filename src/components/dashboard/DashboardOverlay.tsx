@@ -1078,6 +1078,7 @@ export default function DashboardOverlay() {
   const { session, setSession } = useAuthModal();
   const [activeTab, setActiveTab] = useState("overview");
   const logoSrc = useLogo();
+  const resolvedLogo = logoSrc ?? "/assets/img/logo.png";
 
   // ── Sembunyikan navbar publik saat dashboard aktif ──────────────────────
   useEffect(() => {
@@ -1118,7 +1119,7 @@ export default function DashboardOverlay() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
             <Image
-              src={logoSrc}
+              src={resolvedLogo}
               alt="Rebru"
               width={24}
               height={24}

@@ -34,7 +34,6 @@ export default function CollectorNavbar({
   const { logout } = useAuthModal();
   const router = useRouter();
   const logoSrc = useLogo();
-
   const resolvedLogo = logoSrc ?? "/assets/img/logo.png";
 
   async function handleLogout() {
