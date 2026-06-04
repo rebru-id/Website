@@ -1,31 +1,30 @@
 // src/lib/supabase/client.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Supabase Browser Client — TRUE SINGLETON
+// FIX: Singleton pattern untuk mencegah "Multiple GoTrueClient instances"
 //
-// MASALAH YANG DISELESAIKAN:
-//   createBrowserClient() dari @supabase/ssr membuat GoTrueClient baru
-//   setiap kali dipanggil, meskipun URL dan key-nya sama.
-//   Jika dipanggil dari dua tempat berbeda (supabase-collector.ts dan
-//   AuthModalContext.tsx), browser akan punya dua GoTrueClient yang
-//   berebut storage key yang sama → "Multiple GoTrueClient instances" warning
-//   → undefined behavior pada concurrent auth operations.
+// MASALAH LAMA:
+//   AuthModal.tsx line 44:        const supabase = createClient()
+//   AuthModalContext.tsx line 43: const supabase = createClient()
+//   → Dua module masing-masing memanggil createClient() saat di-import
+//   → Dua GoTrueClient terpisah berjalan bersamaan di browser yang sama
+//   → Race condition pada auth state: session bisa flicker/tidak konsisten
+//   → Warning: "Multiple GoTrueClient instances detected"
 //
 // SOLUSI:
-//   Module-level variable `_client` menyimpan instance pertama.
-//   Semua pemanggil berikutnya mendapat instance yang sama.
-//   Konsisten dengan pattern singleton di supabase-collector.ts.
-//
-// USAGE (tidak berubah — backward compatible):
-//   import { createClient } from "@/lib/supabase/client";
-//   const supabase = createClient(); // selalu return instance yang sama
+//   Satu module-level variable (_client) yang di-share semua caller.
+//   Semua file yang import { createClient } dari path ini otomatis
+//   mendapat instance yang sama — tidak perlu ubah import di AuthModal
+//   atau AuthModalContext.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createBrowserClient } from "@supabase/ssr";
 
-// Module-level singleton — null sampai pertama kali diinisialisasi
-let _client: ReturnType<typeof createBrowserClient> | null = null;
+type SupabaseClient = ReturnType<typeof createBrowserClient>;
 
-export function createClient() {
+// Singleton — satu instance untuk seluruh lifetime browser session
+let _client: SupabaseClient | null = null;
+
+export function createClient(): SupabaseClient {
   if (!_client) {
     _client = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

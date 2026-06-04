@@ -4,7 +4,7 @@
 import Image from "next/image";
 import { cn } from "@/utils";
 import BlogManagementTab from "@/components/dashboard/BlogManagementTab";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuthModal } from "./AuthModalContext";
 import { useLogo } from "@/hooks/useLogo";
 import { type UserRole } from "@/types";
@@ -1080,16 +1080,18 @@ export default function DashboardOverlay() {
   const logoSrc = useLogo();
   const resolvedLogo = logoSrc ?? "/assets/img/logo.png";
 
-  // ── Sembunyikan navbar publik saat dashboard aktif ──────────────────────
-  useEffect(() => {
-    const publicHeader = document.querySelector<HTMLElement>("header");
-    if (session) {
-      if (publicHeader) publicHeader.style.display = "none";
-    }
-    return () => {
-      if (publicHeader) publicHeader.style.display = "";
-    };
-  }, [session]);
+  // ── Navbar publik otomatis tertutup oleh DashboardOverlay ────────────────
+  // FIX: Hapus document.querySelector("header").style.display = "none" yang lama.
+  //
+  // Masalah lama:
+  //   1. DOM manipulation langsung pada stale closure reference
+  //   2. Jika session flicker akibat GoTrueClient race condition,
+  //      effect ini jalan berulang → navbar bisa terjebak display:none
+  //
+  // Solusi sekarang (tidak perlu kode tambahan):
+  //   Container utama overlay menggunakan z-[200] > Navbar z-[50]
+  //   → overlay menutupi navbar via CSS saat aktif
+  //   → saat session=null → return null → overlay unmount → navbar kembali terlihat
 
   if (!session) return null;
 
@@ -1104,7 +1106,7 @@ export default function DashboardOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto"
+      className="fixed inset-0 z-[200] overflow-y-auto"
       style={{ background: "var(--bg-primary)" }}
     >
       {/* ── Top bar ──────────────────────────────────────────────────────── */}

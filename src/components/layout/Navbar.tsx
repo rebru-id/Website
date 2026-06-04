@@ -10,16 +10,26 @@ import { cn } from "@/utils";
 import { useLogo } from "@/hooks/useLogo";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { NAV_LINKS, CONTACT_HREF, CONTACT_LABEL } from "@/constants/navigation";
+// useLogo() sekarang selalu return string — tidak ada null check diperlukan
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const logoSrc = useLogo();
+  // FIX: useLogo() tidak pernah return null lagi.
+  // Null guard lama: if (!logoSrc) return <header ... h-[72px]" />
+  // menyebabkan navbar tampil sebagai placeholder kosong/transparan
+  // selama ~100–400ms di setiap page load (ketika next-themes resolve theme).
   const tickingRef = useRef(false);
 
   // Scroll listener — throttled via requestAnimationFrame (performance fix)
   useEffect(() => {
+    // FIX: cek posisi scroll saat pertama mount.
+    // Tanpa ini: jika user refresh saat halaman sudah di-scroll,
+    // navbar tampil transparan (tanpa background) sampai scroll event pertama.
+    setScrolled(window.scrollY > 50);
+
     const onScroll = () => {
       if (!tickingRef.current) {
         requestAnimationFrame(() => {
@@ -37,10 +47,6 @@ export default function Navbar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
-
-  if (!logoSrc) {
-    return <header className="fixed top-0 left-0 right-0 z-50 h-[72px]" />;
-  }
 
   return (
     <>
@@ -112,7 +118,6 @@ export default function Navbar() {
           </nav>
 
           {/* Mobile: toggle + hamburger */}
-          {/* CartButton dihapus dari sini — dipindah ke FloatingCartButton di /products */}
           <div className="md:hidden flex items-center gap-3">
             <ThemeToggle />
             <button

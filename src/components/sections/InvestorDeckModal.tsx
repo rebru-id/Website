@@ -2,17 +2,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
 
 /* ─── Supabase client — anon key, insert-only via RLS ───────────────────────
  * Menggunakan NEXT_PUBLIC_ prefix agar tersedia di client component.
  * RLS policy "allow_public_insert" memastikan anon hanya bisa INSERT,
  * tidak bisa SELECT/UPDATE/DELETE — aman diekspos di frontend.
  * ─────────────────────────────────────────────────────────────────────────── */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
+const supabase = createClient();
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 type FormState = "idle" | "submitting" | "success" | "error";
