@@ -14,7 +14,7 @@
 //   - collector_team (new)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createClient as createSupabaseClient } from "./supabase/client";
+import { createClient } from "./supabase/client";
 import {
   todayWITA,
   getMondayWITA,
@@ -24,14 +24,7 @@ import {
   formatDisplayDate,
   toLocalTimeStr,
 } from "../utils/date";
-
-// Singleton — cegah multiple GoTrueClient instances
-let _supabase: ReturnType<typeof createSupabaseClient> | null = null;
-function getClient() {
-  if (!_supabase) _supabase = createSupabaseClient();
-  return _supabase;
-}
-const supabase = getClient();
+const supabase = createClient();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -207,56 +200,64 @@ export async function fetchTodayStops(): Promise<
 > {
   const today = todayWITA();
 
+  // Query dari collection_routes (tabel induk) — filter route_date di sini valid
+  // Kemudian embed stops + partner + collector
   const { data, error } = await supabase
-    .from("collection_stops")
+    .from("collection_routes")
     .select(
       `
-      id, route_id, partner_id, stop_order, scheduled_time,
-      estimated_kg, status, actual_kg, condition, skip_reason,
-      completed_at, location_coords, notes,
-      partner_applications (organization, jenis_usaha, alamat_detail, kecamatan_nama),
-      collection_routes!inner (
-        route_date,
-        collector_team (name)
+      route_date,
+      collector_team (name),
+      collection_stops (
+        id, route_id, partner_id, stop_order, scheduled_time,
+        estimated_kg, status, actual_kg, condition, skip_reason,
+        completed_at, location_coords, notes,
+        partner_applications (organization, jenis_usaha, alamat_detail, kecamatan_nama)
       )
     `,
     )
-    .eq("collection_routes.route_date", today)
-    .order("scheduled_time", { ascending: true });
+    .eq("route_date", today);
 
-  if (error) throw error;
+  if (error) throw new Error(error.message ?? JSON.stringify(error));
 
-  return (
-    (data ?? [])
-      .map((s: any) => ({
-        id: s.id,
-        route_id: s.route_id,
-        partner_id: s.partner_id,
-        stop_order: s.stop_order,
-        scheduled_time: s.scheduled_time,
-        estimated_kg: s.estimated_kg,
-        status: s.status,
-        actual_kg: s.actual_kg,
-        condition: s.condition,
-        skip_reason: s.skip_reason,
-        completed_at: s.completed_at,
-        location_coords: s.location_coords,
-        photo_url: null,
-        notes: s.notes,
-        partner: s.partner_applications,
-        collector_name: s.collection_routes?.collector_team?.name ?? "—",
-        route_date: s.collection_routes?.route_date ?? today,
-      }))
-      // Sort JS sebagai safety net — PostgREST order bisa berubah perilaku
-      // tergantung versi, terutama untuk nilai null.
-      .sort((a: any, b: any) => {
-        if (a.scheduled_time && b.scheduled_time)
-          return a.scheduled_time.localeCompare(b.scheduled_time);
-        if (a.scheduled_time) return -1;
-        if (b.scheduled_time) return 1;
-        return a.stop_order - b.stop_order;
-      })
+  // Flatten routes → stops, inject collector_name dan route_date
+  const flat = (data ?? []).flatMap((r: any) =>
+    (r.collection_stops ?? []).map((s: any) => ({
+      id: s.id,
+      route_id: s.route_id,
+      partner_id: s.partner_id,
+      stop_order: s.stop_order,
+      scheduled_time: s.scheduled_time,
+      estimated_kg: s.estimated_kg,
+      status: s.status,
+      actual_kg: s.actual_kg,
+      condition: s.condition,
+      skip_reason: s.skip_reason,
+      completed_at: s.completed_at,
+      location_coords: s.location_coords,
+      photo_url: null,
+      notes: s.notes,
+      partner: s.partner_applications,
+      collector_name: r.collector_team?.name ?? "—",
+      route_date: r.route_date ?? today,
+    })),
   );
+
+  // Sort priority (konsisten di semua consumer):
+  // 1. completed_at DESC  → stop yang baru selesai tampil pertama di LogTab
+  // 2. scheduled_time ASC → stop pending diurutkan dari jadwal paling awal
+  // 3. stop_order ASC     → fallback final jika tidak ada waktu
+  return flat.sort((a, b) => {
+    if (a.completed_at && b.completed_at) {
+      return b.completed_at.localeCompare(a.completed_at); // terbaru duluan
+    }
+    if (a.completed_at) return -1; // completed sebelum pending
+    if (b.completed_at) return 1;
+    if (a.scheduled_time && b.scheduled_time) {
+      return a.scheduled_time.localeCompare(b.scheduled_time); // paling awal duluan
+    }
+    return (a.stop_order ?? 0) - (b.stop_order ?? 0);
+  });
 }
 
 /**
@@ -290,6 +291,12 @@ export async function fetchCollectorStats(): Promise<
     );
     throw mErr;
   }
+  console.log(
+    "[fetchCollectorStats] members fetched:",
+    members?.length ?? 0,
+    members,
+  );
+
   // Query routes dulu (filter tanggal di tabel induk) → stops di-embed
   // Ini adalah pendekatan yang benar: filter `.gte/.lte` hanya valid pada tabel utama query
   const { data: routes } = await supabase
@@ -475,12 +482,18 @@ export async function fetchMyTodayRoute(collectorEmail: string): Promise<{
     )
     .eq("collector_id", member.id)
     .eq("route_date", today)
-    // Tidak pakai .order() pada embedded table — PostgREST tidak support ini.
-    // Sorting stop_order ditangani oleh normalizeRoute() di JS setelah fetch.
     .maybeSingle();
 
-  if (rErr) throw rErr;
+  if (rErr) throw new Error(rErr.message ?? JSON.stringify(rErr));
   if (!route) return { route: null, collector: member as CollectorMember };
+
+  // Sort stops by stop_order di sisi client (PostgREST tidak support
+  // .order() pada embedded relationship)
+  if (Array.isArray(route.collection_stops)) {
+    (route as any).collection_stops = [...route.collection_stops].sort(
+      (a: any, b: any) => a.stop_order - b.stop_order,
+    );
+  }
 
   return {
     route: normalizeRoute({ ...route, collector_team: member }),
@@ -556,45 +569,57 @@ export async function fetchCollectorHistory(
 
   if (mErr || !member) return [];
 
-  const since = new Date();
-  since.setDate(since.getDate() - limitDays);
+  // Hitung tanggal awal range menggunakan addDays (WITA-aware)
+  const sinceStr = addDays(todayWITA(), -limitDays);
 
-  const { data, error } = await supabase
-    .from("collection_stops")
+  // Query routes dulu (filter tanggal pada tabel induk — benar di PostgREST)
+  // lalu ambil stops yang bukan pending
+  const { data: routes, error: rErr } = await supabase
+    .from("collection_routes")
     .select(
       `
-      id, route_id, partner_id, stop_order, scheduled_time,
-      estimated_kg, status, actual_kg, condition, skip_reason,
-      completed_at, location_coords, photo_url, notes,
-      partner_applications (organization, jenis_usaha, alamat_detail, kecamatan_nama),
-      collection_routes!inner (route_date, collector_id)
+      id, route_date,
+      collection_stops (
+        id, route_id, partner_id, stop_order, scheduled_time,
+        estimated_kg, status, actual_kg, condition, skip_reason,
+        completed_at, location_coords, photo_url, notes,
+        partner_applications (organization, jenis_usaha, alamat_detail, kecamatan_nama)
+      )
     `,
     )
-    .eq("collection_routes.collector_id", member.id)
-    .neq("status", "pending")
-    .gte("collection_routes.route_date", formatDate(since))
-    .order("completed_at", { ascending: false });
+    .eq("collector_id", member.id)
+    .gte("route_date", sinceStr)
+    .order("route_date", { ascending: false });
 
-  if (error) throw error;
+  if (rErr) throw new Error(rErr.message ?? JSON.stringify(rErr));
 
-  return (data ?? []).map((s: any) => ({
-    id: s.id,
-    route_id: s.route_id,
-    partner_id: s.partner_id,
-    stop_order: s.stop_order,
-    scheduled_time: s.scheduled_time,
-    estimated_kg: s.estimated_kg,
-    status: s.status,
-    actual_kg: s.actual_kg,
-    condition: s.condition,
-    skip_reason: s.skip_reason,
-    completed_at: s.completed_at,
-    location_coords: s.location_coords,
-    photo_url: s.photo_url,
-    notes: s.notes,
-    partner: s.partner_applications,
-    route_date: s.collection_routes?.route_date ?? "",
-  }));
+  // Flatten routes → stops, filter out pending, sort by completed_at desc
+  return (routes ?? [])
+    .flatMap((r: any) =>
+      (r.collection_stops ?? [])
+        .filter((s: any) => s.status !== "pending")
+        .map((s: any) => ({
+          id: s.id,
+          route_id: s.route_id,
+          partner_id: s.partner_id,
+          stop_order: s.stop_order,
+          scheduled_time: s.scheduled_time,
+          estimated_kg: s.estimated_kg,
+          status: s.status,
+          actual_kg: s.actual_kg,
+          condition: s.condition,
+          skip_reason: s.skip_reason,
+          completed_at: s.completed_at,
+          location_coords: s.location_coords,
+          photo_url: s.photo_url,
+          notes: s.notes,
+          partner: s.partner_applications,
+          route_date: r.route_date,
+        })),
+    )
+    .sort((a: any, b: any) =>
+      (b.completed_at ?? "").localeCompare(a.completed_at ?? ""),
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -603,18 +628,7 @@ export async function fetchCollectorHistory(
 
 function normalizeRoute(raw: any): RouteWithCollector {
   const stops: StopWithPartner[] = (raw.collection_stops ?? [])
-    .sort((a: any, b: any) => {
-      // Primary sort: scheduled_time (urutan kronologis penjemputan)
-      // Ini yang user lihat di RouteSection — harus sesuai jam jadwal, bukan urutan input admin
-      if (a.scheduled_time && b.scheduled_time) {
-        return a.scheduled_time.localeCompare(b.scheduled_time);
-      }
-      // Stops dengan scheduled_time ke atas, yang null ke bawah
-      if (a.scheduled_time) return -1;
-      if (b.scheduled_time) return 1;
-      // Fallback: stop_order (urutan insert) jika keduanya tidak punya scheduled_time
-      return a.stop_order - b.stop_order;
-    })
+    .sort((a: any, b: any) => a.stop_order - b.stop_order)
     .map((s: any) => ({
       id: s.id,
       route_id: raw.id,
@@ -716,6 +730,7 @@ export async function fetchAllCollectors(): Promise<CollectorMember[]> {
     console.error("[fetchAllCollectors] error:", error.message, error);
     throw error;
   }
+  console.log("[fetchAllCollectors] fetched:", data?.length ?? 0, data);
   return (data ?? []) as CollectorMember[];
 }
 

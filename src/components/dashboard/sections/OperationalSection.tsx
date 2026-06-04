@@ -3543,7 +3543,16 @@ export default function OperationalSection() {
     ]).then(([w, t, s, stats]) => {
       setWeekRoutes(w as any);
       setTodayRoutes(t as any);
-      setTodayStops(s as any);
+      setTodayStops(
+        // Safety net: pastikan urutan konsisten sebelum masuk ke state
+        // meskipun fetchTodayStops sudah sort, ini lindungi dari future refactor
+        (s as any[]).sort(
+          (a, b) =>
+            (b.completed_at ?? "").localeCompare(a.completed_at ?? "") ||
+            (a.scheduled_time ?? "").localeCompare(b.scheduled_time ?? "") ||
+            (a.stop_order ?? 0) - (b.stop_order ?? 0),
+        ),
+      );
       setTeamStats(stats as any);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3560,7 +3569,14 @@ export default function OperationalSection() {
     Promise.all([fetchTodayRoutes(), fetchTodayStops()])
       .then(([t, s]) => {
         setTodayRoutes(t);
-        setTodayStops(s);
+        setTodayStops(
+          (s as any[]).sort(
+            (a, b) =>
+              (b.completed_at ?? "").localeCompare(a.completed_at ?? "") ||
+              (a.scheduled_time ?? "").localeCompare(b.scheduled_time ?? "") ||
+              (a.stop_order ?? 0) - (b.stop_order ?? 0),
+          ),
+        );
       })
       .catch(console.error);
   }, [activeTab]);
