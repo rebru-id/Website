@@ -10,6 +10,7 @@ import { FOOTER_LINKS } from "@/constants/navigation";
 export default function Footer() {
   const { openModal } = useAuthModal();
   const logoSrc = useLogo();
+  if (!logoSrc) return null; // footer invisible sebentar, tidak mengganggu layout
 
   return (
     <footer className="pt-16 pb-10 px-12 border-t border-border-subtle">

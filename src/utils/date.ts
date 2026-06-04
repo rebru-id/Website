@@ -1,153 +1,35 @@
-// src/utils/dateUtils.ts
+// src/utils/date.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // Timezone-aware date utilities untuk Rebru — WITA (UTC+8, Makassar)
 //
-// MASALAH YANG DISELESAIKAN:
-//   JavaScript new Date().toISOString() selalu UTC.
-//   Di WITA (UTC+8), tengah malam lokal = 16:00 UTC kemarin.
-//   Semua perbandingan tanggal yang pakai toISOString() akan geser -1 hari.
+// ── BUG YANG DIPERBAIKI (v2) ─────────────────────────────────────────────────
 //
-// SOLUSI:
-//   Semua fungsi di file ini mengembalikan tanggal dalam konteks WITA.
-//   Seluruh komponen WAJIB import dari sini — JANGAN pakai toISOString()
-//   untuk menghasilkan string tanggal lokal di mana pun di project ini.
+// BUG LAMA:
+//   nowWITA() membuat Date dengan internal UTC = actual_UTC + 8jam.
+//   Ini dimaksudkan agar getUTCDate() = tanggal WITA.
+//   TAPI formatDate() dan fungsi lain memakai LOCAL methods (getDate() dll).
 //
-// CARA PAKAI:
-//   import { todayWITA, toLocalDateStr, getMondayWITA } from "@/utils/dateUtils";
+//   Di browser WITA (+8), hasilnya DOUBLE-COUNT offset:
+//     actual_UTC  = June 2, 11:24 UTC
+//     nowWITA()   = Date(June 2, 19:24 UTC)
+//     local WITA  = June 2, 19:24 UTC = June 3, 03:24 WITA
+//     getDate()   = 3  ← SALAH, harusnya 2
+//
+//   Akibat: OperationalSection menyorot hari +1 dari tanggal sebenarnya.
+//
+// FIX:
+//   Konsistenkan semua operasi tanggal menggunakan UTC methods.
+//   parseLocalDate: parse "YYYY-MM-DD" sebagai UTC midnight.
+//   formatDate, getMondayWITA, addDays, formatDisplayDate: semua getUTC*.
+//   Hasil: benar di browser timezone apapun (UTC, WITA, WIB, dst).
+//
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Offset WITA dalam menit: UTC+8 = 480 menit */
 const WITA_OFFSET_MINUTES = 8 * 60;
 
-/**
- * Buat Date object yang menunjuk ke "sekarang" dalam WITA.
- * Gunakan ini sebagai pengganti `new Date()` saat butuh waktu lokal Makassar.
- */
-export function nowWITA(): Date {
-  const utc = Date.now();
-  return new Date(utc + WITA_OFFSET_MINUTES * 60_000);
-}
+// ── Konstanta tampilan Indonesia ──────────────────────────────────────────────
 
-/**
- * Kembalikan string "YYYY-MM-DD" untuk hari ini dalam WITA.
- * Pengganti: new Date().toISOString().split("T")[0]
- *
- * @example
- * todayWITA() → "2026-05-30"  // benar di Makassar jam 01:00
- * new Date().toISOString().split("T")[0] → "2026-05-29"  // SALAH
- */
-export function todayWITA(): string {
-  return formatDate(nowWITA());
-}
-
-/**
- * Format Date object menjadi string "YYYY-MM-DD" tanpa UTC conversion.
- * Gunakan ini untuk semua konstruksi string tanggal.
- *
- * @example
- * formatDate(new Date(2026, 4, 30)) → "2026-05-30"
- */
-export function formatDate(d: Date): string {
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
-
-/**
- * Parse string "YYYY-MM-DD" menjadi Date object di local midnight WITA.
- * Pengganti: new Date("YYYY-MM-DD") yang diparsing sebagai UTC midnight.
- *
- * @example
- * parseLocalDate("2026-05-30") → Date di WITA tengah malam (bukan UTC)
- */
-export function parseLocalDate(dateStr: string): Date {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  // new Date(y, m-1, d) = local midnight — tidak konversi ke UTC
-  return new Date(y, m - 1, d);
-}
-
-/**
- * Konversi timestamp UTC dari Supabase menjadi string tanggal lokal WITA.
- * Pengganti: new Date(isoString).toISOString().split("T")[0]
- *
- * @example
- * // Supabase simpan "2026-05-29T16:00:00Z" (= 30 Mei WITA tengah malam)
- * toLocalDateStr("2026-05-29T16:00:00Z") → "2026-05-30"  // benar
- * new Date("2026-05-29T16:00:00Z").toISOString().split("T")[0] → "2026-05-29"  // SALAH
- */
-export function toLocalDateStr(isoString: string): string {
-  // Tambah offset WITA ke timestamp UTC, lalu ambil tanggalnya
-  const utcMs = new Date(isoString).getTime();
-  const witaMs = utcMs + WITA_OFFSET_MINUTES * 60_000;
-  return formatDate(new Date(witaMs));
-}
-
-/**
- * Konversi timestamp UTC dari Supabase menjadi string waktu lokal WITA "HH:MM".
- *
- * @example
- * toLocalTimeStr("2026-05-29T00:30:00Z") → "08:30"  (WITA = UTC+8)
- */
-export function toLocalTimeStr(isoString: string): string {
-  const utcMs = new Date(isoString).getTime();
-  const witaMs = utcMs + WITA_OFFSET_MINUTES * 60_000;
-  const d = new Date(witaMs);
-  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-}
-
-/**
- * Ambil tanggal Senin dari minggu yang mengandung dateStr, dalam WITA.
- * Pengganti: getMondayOf() yang tersebar di beberapa komponen.
- *
- * @example
- * getMondayWITA("2026-05-30") → "2026-05-25"  (Senin minggu itu)
- */
-export function getMondayWITA(dateStr: string): string {
-  const d = parseLocalDate(dateStr);
-  const day = d.getDay(); // 0=Minggu, 1=Senin, ..., 6=Sabtu
-  const diff = day === 0 ? -6 : 1 - day; // mundur ke Senin
-  d.setDate(d.getDate() + diff);
-  return formatDate(d);
-}
-
-/**
- * Tambah sejumlah hari ke string tanggal "YYYY-MM-DD".
- *
- * @example
- * addDays("2026-05-28", 3) → "2026-05-31"
- * addDays("2026-05-28", -1) → "2026-05-27"
- */
-export function addDays(dateStr: string, days: number): string {
-  const d = parseLocalDate(dateStr);
-  d.setDate(d.getDate() + days);
-  return formatDate(d);
-}
-
-/**
- * Hitung selisih hari antara dua string tanggal (a - b).
- * Positif = a lebih baru dari b.
- * Negatif = a lebih lama dari b.
- *
- * @example
- * diffDays("2026-05-30", "2026-05-28") → 2
- * diffDays("2026-05-25", "2026-05-28") → -3
- */
-export function diffDays(a: string, b: string): number {
-  const msA = parseLocalDate(a).getTime();
-  const msB = parseLocalDate(b).getTime();
-  return Math.round((msA - msB) / 86_400_000);
-}
-
-/**
- * Format tanggal untuk tampilan bahasa Indonesia.
- * Pengganti: d.toLocaleDateString("id-ID", {...}) yang bergantung pada locale browser.
- *
- * @example
- * formatDisplayDate("2026-05-30") → "30 Mei 2026"
- * formatDisplayDate("2026-05-30", { weekday: true }) → "Sab, 30 Mei 2026"
- * formatDisplayDate("2026-05-30", { short: true }) → "30 Mei"
- */
 const BULAN = [
   "Jan",
   "Feb",
@@ -162,6 +44,7 @@ const BULAN = [
   "Nov",
   "Des",
 ];
+
 const BULAN_PANJANG = [
   "Januari",
   "Februari",
@@ -176,31 +59,184 @@ const BULAN_PANJANG = [
   "November",
   "Desember",
 ];
+
 const HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
+// ── Core: waktu WITA sekarang ─────────────────────────────────────────────────
+
+/**
+ * Buat Date object yang merepresentasikan "sekarang" dalam WITA.
+ * Internal UTC time = actual_UTC + 8 jam.
+ * Gunakan SELALU dengan getUTC* methods (getUTCDate, getUTCHours, dll).
+ *
+ * @example
+ * // Jam 01:30 WITA (= 17:30 UTC kemarin)
+ * nowWITA().getUTCDate() → tanggal WITA yang benar
+ */
+export function nowWITA(): Date {
+  const utc = Date.now();
+  return new Date(utc + WITA_OFFSET_MINUTES * 60_000);
+}
+
+/**
+ * Kembalikan string "YYYY-MM-DD" untuk hari ini dalam WITA.
+ * Benar di semua timezone browser.
+ *
+ * @example
+ * // Jam 01:00 WITA (= 17:00 UTC kemarin)
+ * todayWITA() → "2026-06-02"  ✓  (benar, ini masih June 2 di Makassar)
+ * new Date().toISOString().split("T")[0] → "2026-06-01"  ✗
+ */
+export function todayWITA(): string {
+  return formatDate(nowWITA());
+}
+
+// ── formatDate — WAJIB pakai getUTC* ─────────────────────────────────────────
+
+/**
+ * Format Date object menjadi string "YYYY-MM-DD".
+ * Menggunakan getUTC* methods agar benar untuk:
+ *   - nowWITA() yang encode WITA time di posisi UTC
+ *   - parseLocalDate() yang parse sebagai UTC midnight
+ *
+ * JANGAN ganti ke getFullYear/getMonth/getDate — akan salah di browser WITA.
+ */
+export function formatDate(d: Date): string {
+  const yy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+// ── parseLocalDate — UTC midnight ─────────────────────────────────────────────
+
+/**
+ * Parse string "YYYY-MM-DD" menjadi Date object di UTC midnight.
+ * Konsisten dengan formatDate yang menggunakan getUTC* methods.
+ *
+ * MENGAPA UTC midnight (bukan local midnight):
+ *   new Date(y, m-1, d) = local midnight.
+ *   Di WITA (+8), local midnight = 16:00 UTC hari sebelumnya.
+ *   getUTCDate() pada Date itu akan return tanggal -1. SALAH.
+ *
+ *   new Date("YYYY-MM-DDT00:00:00Z") = UTC midnight.
+ *   getUTCDate() selalu return tanggal yang dimaksud. BENAR.
+ *
+ * @example
+ * parseLocalDate("2026-06-02").getUTCDate() → 2  ✓ (di browser timezone apapun)
+ */
+export function parseLocalDate(dateStr: string): Date {
+  return new Date(dateStr + "T00:00:00Z");
+}
+
+// ── String konversi dari Supabase timestamps ──────────────────────────────────
+
+/**
+ * Konversi timestamp UTC dari Supabase menjadi string tanggal lokal WITA.
+ *
+ * @example
+ * toLocalDateStr("2026-05-29T16:00:00Z") → "2026-05-30"
+ * // (16:00 UTC = midnight WITA = masih 30 Mei di Makassar)
+ */
+export function toLocalDateStr(isoString: string): string {
+  const utcMs = new Date(isoString).getTime();
+  const witaMs = utcMs + WITA_OFFSET_MINUTES * 60_000;
+  return formatDate(new Date(witaMs));
+}
+
+/**
+ * Konversi timestamp UTC dari Supabase menjadi string waktu lokal WITA "HH:MM".
+ *
+ * @example
+ * toLocalTimeStr("2026-05-29T00:30:00Z") → "08:30"
+ */
+export function toLocalTimeStr(isoString: string): string {
+  const utcMs = new Date(isoString).getTime();
+  const witaMs = utcMs + WITA_OFFSET_MINUTES * 60_000;
+  const d = new Date(witaMs);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+// ── Date arithmetic — millisecond-based, timezone-safe ────────────────────────
+
+/**
+ * Ambil tanggal Senin dari minggu yang mengandung dateStr.
+ * Menggunakan getUTCDay() + millisecond arithmetic — benar di semua timezone.
+ *
+ * @example
+ * getMondayWITA("2026-06-02") → "2026-06-01"  (Selasa → Senin minggu itu)
+ */
+export function getMondayWITA(dateStr: string): string {
+  const d = parseLocalDate(dateStr); // UTC midnight
+  const day = d.getUTCDay(); // 0=Min, 1=Sen, ..., 6=Sab
+  const diff = day === 0 ? -6 : 1 - day;
+  return formatDate(new Date(d.getTime() + diff * 86_400_000));
+}
+
+/**
+ * Tambah sejumlah hari ke string tanggal "YYYY-MM-DD".
+ * Menggunakan millisecond arithmetic — tidak terpengaruh DST atau timezone.
+ *
+ * @example
+ * addDays("2026-05-28", 3)  → "2026-05-31"
+ * addDays("2026-05-28", -1) → "2026-05-27"
+ */
+export function addDays(dateStr: string, days: number): string {
+  const d = parseLocalDate(dateStr);
+  return formatDate(new Date(d.getTime() + days * 86_400_000));
+}
+
+/**
+ * Hitung selisih hari antara dua string tanggal (a - b).
+ * Positif = a lebih baru dari b. Negatif = a lebih lama dari b.
+ *
+ * @example
+ * diffDays("2026-06-03", "2026-06-01") →  2
+ * diffDays("2026-05-25", "2026-05-28") → -3
+ */
+export function diffDays(a: string, b: string): number {
+  const msA = parseLocalDate(a).getTime();
+  const msB = parseLocalDate(b).getTime();
+  return Math.round((msA - msB) / 86_400_000);
+}
+
+// ── Display formatting ────────────────────────────────────────────────────────
+
+/**
+ * Format tanggal untuk tampilan bahasa Indonesia.
+ * Menggunakan getUTC* methods — konsisten dengan parseLocalDate + formatDate.
+ *
+ * @example
+ * formatDisplayDate("2026-06-02")                          → "2 Jun 2026"
+ * formatDisplayDate("2026-06-02", { weekday: true })       → "Sel, 2 Jun 2026"
+ * formatDisplayDate("2026-06-02", { short: true })         → "2 Jun"
+ * formatDisplayDate("2026-06-02", { longMonth: true })     → "2 Juni 2026"
+ */
 export function formatDisplayDate(
   dateStr: string,
   opts: { weekday?: boolean; short?: boolean; longMonth?: boolean } = {},
 ): string {
-  const d = parseLocalDate(dateStr);
-  const day = d.getDate();
-  const month = opts.longMonth
-    ? BULAN_PANJANG[d.getMonth()]
-    : BULAN[d.getMonth()];
-  const year = d.getFullYear();
-  const hari = HARI[d.getDay()];
+  const d = parseLocalDate(dateStr); // UTC midnight
+  const day = d.getUTCDate();
+  const mon = opts.longMonth
+    ? BULAN_PANJANG[d.getUTCMonth()]
+    : BULAN[d.getUTCMonth()];
+  const year = d.getUTCFullYear();
+  const hari = HARI[d.getUTCDay()];
 
-  if (opts.short) return `${day} ${month}`;
-  if (opts.weekday) return `${hari}, ${day} ${month} ${year}`;
-  return `${day} ${month} ${year}`;
+  if (opts.short) return `${day} ${mon}`;
+  if (opts.weekday) return `${hari}, ${day} ${mon} ${year}`;
+  return `${day} ${mon} ${year}`;
 }
+
+// ── Overdue check ─────────────────────────────────────────────────────────────
 
 /**
  * Cek apakah sebuah waktu (format "HH:MM") sudah terlewat lebih dari X menit.
- * Dipakai MonitorTab untuk cek collector overdue.
+ * Menggunakan getUTC* pada nowWITA() — benar di semua browser timezone.
  *
  * @example
- * isTimeOverdue("08:00", 45) → true  jika sekarang sudah > 08:45 WITA
+ * isTimeOverdue("08:00", 45) → true jika sekarang > 08:45 WITA
  */
 export function isTimeOverdue(
   scheduledTime: string | null,
@@ -209,6 +245,6 @@ export function isTimeOverdue(
   if (!scheduledTime) return false;
   const [h, m] = scheduledTime.split(":").map(Number);
   const now = nowWITA();
-  const nowMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const nowMins = now.getUTCHours() * 60 + now.getUTCMinutes(); // getUTC* ✓
   return nowMins > h * 60 + m + toleranceMinutes;
 }

@@ -10,20 +10,18 @@ import { useAuthModal } from "@/components/dashboard/AuthModalContext";
 import CollectorNavbar from "@/components/collector/CollectorNavbar";
 import RouteSection from "@/components/collector/RouteSection";
 import HistorySection from "@/components/collector/HistorySection";
-import Footer from "@/components/layout/Footer";
 import {
   fetchMyTodayRoute,
   fetchCollectorHistory,
   updateStopStatus,
   type StopUpdatePayload,
-  type StopWithPartner,
 } from "@/lib/supabase-collector";
 import {
   toRouteStop,
   toWasteLog,
   toWeeklyBars,
 } from "@/utils/collector-adapters";
-import { todayWITA } from "@/utils/date";
+import { todayWITA, addDays, formatDate } from "@/utils/date";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,9 +159,12 @@ export default function CollectorPage() {
       setRouteStops(stops);
       setHistoryLogs(logs);
       setWeeklyData(bars.length > 0 ? bars : DEFAULT_WEEKLY_BARS);
-    } catch (err) {
-      console.error("CollectorPage: gagal memuat data:", err);
-      setError("Gagal memuat rute. Periksa koneksi dan coba refresh.");
+    } catch (err: any) {
+      const msg = err?.message ?? err?.error_description ?? JSON.stringify(err);
+      console.error("CollectorPage: gagal memuat data:", msg, err);
+      setError(
+        `Gagal memuat rute: ${msg || "Periksa koneksi dan coba refresh."}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -178,18 +179,23 @@ export default function CollectorPage() {
     async (updatedStops: RouteStop[]) => {
       setRouteStops(updatedStops);
 
+      // FIX #1: deteksi berdasarkan ID, bukan index array
+      // Index-based comparison bisa salah jika ada reorder atau race condition
+      const prevById = Object.fromEntries(routeStops.map((s) => [s.id, s]));
       const justCompleted = updatedStops.find(
-        (s, i) => s.status !== "pending" && routeStops[i]?.status === "pending",
+        (s) => s.status !== "pending" && prevById[s.id]?.status === "pending",
       );
 
       if (!justCompleted) return;
 
+      // FIX #3: sertakan location_accuracy dalam payload
       const payload: StopUpdatePayload = {
         status: justCompleted.status as "done" | "skipped",
         actual_kg: justCompleted.actual_kg,
         condition: justCompleted.condition as StopUpdatePayload["condition"],
         skip_reason: justCompleted.skip_reason,
         location_coords: justCompleted.location_coords,
+        location_accuracy: justCompleted.location_accuracy, // ← sebelumnya hilang
         notes: justCompleted.notes,
       };
 
@@ -197,6 +203,7 @@ export default function CollectorPage() {
         await updateStopStatus(justCompleted.id, payload);
       } catch (err) {
         console.error("Gagal menyimpan status stop:", err);
+        // Rollback ke state sebelumnya jika DB update gagal
         setRouteStops(routeStops);
       }
     },
@@ -316,8 +323,6 @@ export default function CollectorPage() {
           </div>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }
@@ -327,19 +332,20 @@ export default function CollectorPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Kelompokkan history stops per hari → untuk WeeklyBar
-// Input: raw StopWithPartner dari fetchCollectorHistory (bukan WasteLog)
-// Output: { route_date, total_actual_kg }[] — compatible dengan toWeeklyBars
+// Input: StopWithPartner[] dari fetchCollectorHistory (raw DB data)
+// Pakai .actual_kg (field StopWithPartner) — bukan .kg (field WasteLog UI type)
 function groupHistoryByDay(
-  history: (StopWithPartner & { route_date: string })[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  history: any[],
   today: string,
-): { route_date: string; total_actual_kg: number }[] {
+): any[] {
   const byDay: Record<string, { route_date: string; total_actual_kg: number }> =
     {};
 
-  history.forEach((h) => {
+  history.forEach((h: any) => {
     const d = h.route_date ?? today;
     if (!byDay[d]) byDay[d] = { route_date: d, total_actual_kg: 0 };
-    // Gunakan actual_kg (field di StopWithPartner), bukan kg (field di WasteLog)
+    // FIX #2: actual_kg (StopWithPartner DB field), bukan .kg (WasteLog UI field)
     byDay[d].total_actual_kg += h.actual_kg ?? 0;
   });
 

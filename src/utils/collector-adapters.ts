@@ -12,6 +12,11 @@
 
 import type { StopWithPartner } from "@/lib/supabase-collector";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
+import {
+  parseLocalDate,
+  formatDisplayDate,
+  toLocalTimeStr,
+} from "@/utils/date";
 
 // ── StopWithPartner → RouteStop ──────────────────────────────────────────────
 // Ini adalah mapping UTAMA antara data partner_applications (dari DB)
@@ -39,11 +44,9 @@ export function toRouteStop(stop: StopWithPartner): RouteStop {
     // Diisi setelah collector update
     actual_kg: stop.actual_kg ?? undefined,
     condition: (stop.condition as RouteStop["condition"]) ?? undefined,
+    // FIX #6: toLocalTimeStr (WITA-aware) menggantikan toLocaleTimeString (locale-dependent)
     completed_at: stop.completed_at
-      ? new Date(stop.completed_at).toLocaleTimeString("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
+      ? toLocalTimeStr(stop.completed_at)
       : undefined,
     location_coords: stop.location_coords ?? undefined,
     skip_reason: stop.skip_reason ?? undefined,
@@ -56,17 +59,13 @@ export function toRouteStop(stop: StopWithPartner): RouteStop {
 export function toWasteLog(
   stop: StopWithPartner & { route_date: string },
 ): WasteLog {
-  const dateObj = new Date(stop.route_date);
-  const dateLabel = dateObj.toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-  });
+  // FIX #5: formatDisplayDate (WITA-aware, konsisten) menggantikan
+  // toLocaleDateString (bergantung locale browser, bisa beda antar device)
+  const dateLabel = formatDisplayDate(stop.route_date, { short: true });
 
+  // FIX #5: toLocalTimeStr (WITA-aware) menggantikan toLocaleTimeString
   const timeLabel = stop.completed_at
-    ? new Date(stop.completed_at).toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? toLocalTimeStr(stop.completed_at)
     : (stop.scheduled_time ?? "—");
 
   return {
@@ -110,8 +109,9 @@ export function toWeeklyBars(
   const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
   return routes.map((r) => {
-    const dateObj = new Date(r.route_date);
-    const dayIdx = dateObj.getDay();
+    // FIX #4: parseLocalDate + getUTCDay() (timezone-safe) menggantikan
+    // new Date(str).getDay() yang menggunakan local timezone browser
+    const dayIdx = parseLocalDate(r.route_date).getUTCDay();
 
     return {
       day: r.route_date === today ? "Hari" : dayNames[dayIdx],

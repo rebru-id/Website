@@ -15,12 +15,11 @@ import { useEffect, useState } from "react";
 const LOGO_DARK = "/assets/img/logo.png";
 const LOGO_LIGHT = "/assets/img/Glogo.png";
 
-export function useLogo(): string {
+export function useLogo(): string | null {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-
   useEffect(() => setMounted(true), []);
 
-  if (!mounted) return LOGO_DARK; // SSR default
+  if (!mounted) return null; // ← null, bukan fallback yang memicu re-render
   return resolvedTheme === "light" ? LOGO_LIGHT : LOGO_DARK;
 }

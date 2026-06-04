@@ -14,6 +14,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useLogo } from "@/hooks/useLogo";
 import { useAuthModal } from "@/components/dashboard/AuthModalContext";
 
@@ -30,10 +31,16 @@ export default function CollectorNavbar({
   stopsCompleted,
   totalStops,
 }: CollectorNavbarProps) {
-  // logout() dari context sudah wrap supabase.auth.signOut() + setSession(null)
-  // Gunakan ini — JANGAN setSession(null) langsung
   const { logout } = useAuthModal();
+  const router = useRouter();
   const logoSrc = useLogo();
+
+  const resolvedLogo = logoSrc ?? "/assets/img/logo.png";
+
+  async function handleLogout() {
+    await logout();
+    router.push("/"); // kembali ke website utama setelah logout
+  }
 
   // Ambil inisial dari nama: "Rizky Kahwa" → "RK"
   const initials = collectorName
@@ -59,7 +66,7 @@ export default function CollectorNavbar({
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2 shrink-0">
             <Image
-              src={logoSrc}
+              src={resolvedLogo}
               alt="Rebru"
               width={24}
               height={24}
@@ -174,9 +181,9 @@ export default function CollectorNavbar({
             {initials}
           </div>
 
-          {/* Logout — memanggil logout() dari context */}
+          {/* Logout */}
           <button
-            onClick={logout}
+            onClick={handleLogout}
             className="font-mono text-[0.62rem] tracking-[0.08em] uppercase px-3 py-1.5 rounded-md border text-text-muted hover:text-text-primary transition-all duration-200"
             style={{ borderColor: "var(--border-default)" }}
           >

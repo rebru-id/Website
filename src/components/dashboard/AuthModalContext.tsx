@@ -30,11 +30,11 @@ import {
 import { type UserRole } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
-// ── Singleton Supabase client ─────────────────────────────────────────────────
-// Module-level agar tidak re-create setiap render.
-// createBrowserClient dari @supabase/ssr internally dedup GoTrueClient
-// jika URL+key sama, tapi module-level lebih eksplisit dan aman.
-const supabase = createClient();
+// ── Auth mode + Supabase client ──────────────────────────────────────────────
+// Mock mode: Supabase client tidak diinisialisasi → tidak ada network call
+// Supabase mode: client diinisialisasi untuk session restore + listener
+const AUTH_MODE = process.env.NEXT_PUBLIC_AUTH_MODE ?? "supabase";
+const supabase = AUTH_MODE === "supabase" ? createClient() : null;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,11 +67,12 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
   const closeModal = useCallback(() => setIsOpen(false), []);
 
   // ── Session restore & listener ─────────────────────────────────────────────
-  // Dijalankan sekali saat provider mount.
-  // Menangani dua kasus:
-  //   a) Hard refresh: getSession() → restore dari cookie/localStorage Supabase
-  //   b) Login di tab lain / token refresh: onAuthStateChange → sinkron otomatis
+  // Mock mode: tidak perlu restore session — setSession dipanggil langsung
+  //            dari AuthModal setelah mock login berhasil
+  // Supabase mode: restore session dari cookie + listener untuk token refresh
   useEffect(() => {
+    if (AUTH_MODE !== "supabase" || !supabase) return;
+
     // (a) Restore session yang sudah ada saat pertama load
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       if (s?.user) {
@@ -96,12 +97,10 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
           email: s.user.email ?? "",
         });
       } else {
-        // Token expired, signOut, atau session revoked → clear local state
         setSessionState(null);
       }
     });
 
-    // Cleanup: unsubscribe saat provider unmount
     return () => subscription.unsubscribe();
   }, []);
 
@@ -114,12 +113,12 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── logout ────────────────────────────────────────────────────────────────
-  // Panggil ini dari semua tombol Logout — bukan setSession(null).
-  // Urutan: signOut Supabase (invalidate token di server) → clear local state.
-  // onAuthStateChange juga akan fire dengan session=null tapi itu tidak masalah
-  // karena setSessionState(null) idempotent.
+  // Mock mode: cukup clear local state
+  // Supabase mode: signOut ke server + clear local state
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
+    if (AUTH_MODE === "supabase" && supabase) {
+      await supabase.auth.signOut();
+    }
     setSessionState(null);
   }, []);
 

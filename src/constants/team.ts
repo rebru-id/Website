@@ -135,51 +135,54 @@ export const CORE_TEAM: TeamMember[] = [
     ...COLOR_PRESETS.sage,
   },
   {
-    id: "team-ainun",
+    id: "founder-ainun",
     name: "Ainun Rezkiva Arif",
-    role: "Research Associate & Social Media",
+    role: "Product Development Lead",
     location: "Makassar, ID",
     photo: "/team/ainun.png",
     initials: "ARA",
     tagline:
-      "Bridging sustainable material research with science-driven environmental communication.",
-    bio: "Chemistry researcher with a focus on biomass-based carbon materials, energy storage systems, and circular economy innovation. Experienced in developing sustainable material solutions from organic waste for environmental and energy-related applications, with current research centered on environmentally friendly energy storage materials. Actively contributes to REBRU through research and development initiatives while supporting science-based social media and educational content to strengthen environmental awareness and public engagement.",
+      "Transforming research insights into sustainable product innovation.",
+
+    bio: "Chemistry researcher with expertise in biomass-based carbon materials, sustainable material development, and circular economy innovation. Experienced in translating research findings into practical development initiatives, with a focus on creating environmentally responsible solutions from underutilized resources. At REBRU, contributes to product development through material research, validation, and innovation while supporting science-based communication to strengthen public understanding of sustainability and circular economy practices.",
+
     expertise: [
+      "Sustainable Product Development",
       "Biomass-Based Carbon Materials",
-      "Sustainable Material Research",
+      "Material Research & Validation",
       "Circular Economy Innovation",
-      "Science Communication & Educational Content",
     ],
-    tags: [
-      "Research",
-      "Sustainability",
-      "Carbon Materials",
-      "Science Communication",
-    ],
-    linkedin: "",
-    badge: "Research Team",
+
+    tags: ["Development", "Research", "Sustainability", "Innovation"],
+
+    linkedin: "#",
+    badge: "Product Team",
     ...COLOR_PRESETS.sage,
   },
 
   {
-    id: "team-lisa",
+    id: "founder-lisa",
     name: "Lisa Wulandari",
-    role: "Research & Development Associate",
+    role: "Regenerative Agriculture Lead",
     location: "Makassar, ID",
     photo: "/team/lisa.png",
     initials: "LW",
     tagline:
-      "Advancing sustainable product development through research and collaborative innovation.",
-    bio: "Chemistry postgraduate with a research focus on biomass-based carbon materials, sustainable energy systems, and circular economy innovation. Experienced in supporting research and product development initiatives for environmentally driven solutions derived from organic waste materials. Passionate about collaborative innovation, science communication, and public engagement, with strong confidence in presenting ideas, leading discussions, and translating research into impactful development initiatives.",
+      "Advancing regenerative agriculture through circular resource innovation and sustainable development.",
+
+    bio: "Chemistry postgraduate with a research background in biomass-based carbon materials, sustainable resource utilization, and circular economy innovation. Passionate about advancing regenerative agriculture through the responsible transformation of organic resources into solutions that support soil health, resource efficiency, and long-term environmental resilience. Combines scientific research, product development, and stakeholder engagement to bridge sustainability innovation with practical agricultural applications.",
+
     expertise: [
-      "Sustainable Product Development",
-      "Biomass-Based Carbon Materials",
+      "Regenerative Agriculture Systems",
+      "Biomass Resource Utilization",
       "Circular Economy Innovation",
-      "Research Presentation & Public Communication",
+      "Sustainability Communication & Engagement",
     ],
-    tags: ["Research", "Development", "Sustainability", "Communication"],
-    linkedin: "",
-    badge: "Research Team",
+
+    tags: ["Agriculture", "Regeneration", "Sustainability", "Circular Economy"],
+
+    linkedin: "#",
+    badge: "Impact Team",
     ...COLOR_PRESETS.sage,
   }, // ── Tambah core team member baru di sini ──────────────────────────────────
   // {

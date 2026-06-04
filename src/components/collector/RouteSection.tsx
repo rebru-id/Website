@@ -35,6 +35,7 @@ import type {
   MitraCategory,
 } from "@/types/collector";
 import { DEFAULT_FORM_DATA, SKIP_REASONS } from "@/types/collector";
+import { nowWITA, formatDisplayDate } from "@/utils/date";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper sub-components
@@ -44,7 +45,8 @@ function CategoryPill({ cat }: { cat: MitraCategory }) {
   const map: Record<MitraCategory, { label: string; style: string }> = {
     cafe: {
       label: "Cafe",
-      style: "bg-[rgba(196,149,106,0.12)] text-coffee-latte border-border-DEFAULT",
+      style:
+        "bg-[rgba(196,149,106,0.12)] text-coffee-latte border-border-DEFAULT",
     },
     hotel: {
       label: "Hotel",
@@ -52,7 +54,8 @@ function CategoryPill({ cat }: { cat: MitraCategory }) {
     },
     resto: {
       label: "Resto",
-      style: "bg-[rgba(122,171,126,0.12)] text-forest-sage border-border-DEFAULT",
+      style:
+        "bg-[rgba(122,171,126,0.12)] text-forest-sage border-border-DEFAULT",
     },
   };
   const { label, style } = map[cat];
@@ -106,7 +109,10 @@ function StopBullet({
     return (
       <span
         className={cn(base)}
-        style={{ background: "rgba(122,171,126,0.15)", color: "var(--forest-sage)" }}
+        style={{
+          background: "rgba(122,171,126,0.15)",
+          color: "var(--forest-sage)",
+        }}
       >
         ✓
       </span>
@@ -124,7 +130,10 @@ function StopBullet({
     return (
       <span
         className={cn(base)}
-        style={{ background: "var(--coffee-latte)", color: "var(--bg-primary)" }}
+        style={{
+          background: "var(--coffee-latte)",
+          color: "var(--bg-primary)",
+        }}
       >
         {stop.order}
       </span>
@@ -159,7 +168,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     ...DEFAULT_FORM_DATA,
     qty: stop.estimated_kg,
   });
-  const [showSkip, setShowSkip]   = useState(false);
+  const [showSkip, setShowSkip] = useState(false);
   const [skipReason, setSkipReason] = useState("");
   const [customReason, setCustomReason] = useState("");
   const [locLoading, setLocLoading] = useState(false);
@@ -167,7 +176,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     Partial<Record<keyof StopFormData, string>>
   >({});
   const photoRef = useRef<HTMLInputElement>(null);
-  const formRef  = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const captureGPS = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -215,7 +224,9 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
         condition: draft.condition ?? null,
         notes: draft.notes ?? "",
       }));
-    } catch { /* invalid draft */ }
+    } catch {
+      /* invalid draft */
+    }
   }, [stop.id, stop.estimated_kg]);
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
@@ -246,8 +257,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
   }
 
   function handleConfirmSkip() {
-    const reason =
-      skipReason === "Lainnya" ? customReason.trim() : skipReason;
+    const reason = skipReason === "Lainnya" ? customReason.trim() : skipReason;
     if (!reason) return;
     localStorage.removeItem(`rebru_draft_${stop.id}`);
     onSkip(reason);
@@ -313,8 +323,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
           {/* Qty stepper */}
           <div>
             <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
-              Kuantitas{" "}
-              <span style={{ color: "var(--coffee-latte)" }}>*</span>
+              Kuantitas <span style={{ color: "var(--coffee-latte)" }}>*</span>
             </label>
             <div className="flex items-center gap-2">
               <button
@@ -365,7 +374,10 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
               </span>
             </div>
             {errors.qty && (
-              <p className="font-mono text-[0.7rem] mt-1" style={{ color: "#f87171" }}>
+              <p
+                className="font-mono text-[0.7rem] mt-1"
+                style={{ color: "#f87171" }}
+              >
                 {errors.qty}
               </p>
             )}
@@ -391,7 +403,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
                     borderColor:
                       form.condition === c
                         ? "rgba(122,171,126,0.4)"
-                        : "var(--border-default)",
+                        : "var(--border-strong)",
                     color:
                       form.condition === c
                         ? "var(--forest-sage)"
@@ -403,7 +415,10 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
               ))}
             </div>
             {errors.condition && (
-              <p className="font-mono text-[0.7rem] mt-1" style={{ color: "#f87171" }}>
+              <p
+                className="font-mono text-[0.7rem] mt-1"
+                style={{ color: "#f87171" }}
+              >
                 {errors.condition}
               </p>
             )}
@@ -585,8 +600,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
                       skipReason === r
                         ? "rgba(248,113,113,0.3)"
                         : "var(--border-subtle)",
-                    color:
-                      skipReason === r ? "#f87171" : "var(--text-muted)",
+                    color: skipReason === r ? "#f87171" : "var(--text-muted)",
                   }}
                 >
                   {r}
@@ -701,12 +715,16 @@ function RouteCard({
         tabIndex={isPending ? 0 : undefined}
         onKeyDown={
           isPending
-            ? (e) => { if (e.key === "Enter" || e.key === " ") onToggle(); }
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") onToggle();
+              }
             : undefined
         }
         aria-expanded={isPending ? isActive : undefined}
         aria-label={
-          isPending ? `Stop ${stop.order}: ${stop.mitra_name} — klik untuk buka form` : undefined
+          isPending
+            ? `Stop ${stop.order}: ${stop.mitra_name} — klik untuk buka form`
+            : undefined
         }
         className={cn(
           "flex items-start gap-3 px-3 py-3 rounded-md border transition-all duration-200",
@@ -717,9 +735,7 @@ function RouteCard({
         )}
         style={{
           background:
-            isActive && isPending
-              ? "rgba(196,149,106,0.04)"
-              : "var(--bg-card)",
+            isActive && isPending ? "rgba(196,149,106,0.04)" : "var(--bg-card)",
           borderColor:
             isActive && isPending
               ? "var(--coffee-latte)"
@@ -738,7 +754,9 @@ function RouteCard({
           <p
             className={cn(
               "text-[0.88rem] font-medium truncate",
-              stop.status !== "pending" ? "text-text-muted" : "text-text-primary",
+              stop.status !== "pending"
+                ? "text-text-muted"
+                : "text-text-primary",
             )}
           >
             {stop.mitra_name}
@@ -822,8 +840,8 @@ export default function RouteSection({
     return initialStops.find((s) => s.status === "pending")?.id ?? null;
   });
 
-  const doneStops  = stops.filter((s) => s.status === "done");
-  const totalKg    = doneStops.reduce((acc, s) => acc + (s.actual_kg ?? 0), 0);
+  const doneStops = stops.filter((s) => s.status === "done");
+  const totalKg = doneStops.reduce((acc, s) => acc + (s.actual_kg ?? 0), 0);
   const progressPct =
     stops.length > 0
       ? Math.round(
@@ -842,8 +860,10 @@ export default function RouteSection({
   }
 
   function handleSubmit(stopId: string, formData: StopFormData) {
-    const now     = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    // FIX #8: nowWITA() + getUTC* agar jam selesai tercatat dalam WITA
+    // getHours() bergantung timezone browser → salah jika bukan WITA
+    const now = nowWITA();
+    const timeStr = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
 
     const updated = stops.map((s) =>
       s.id === stopId
@@ -863,7 +883,7 @@ export default function RouteSection({
     updateStops(updated);
 
     // Auto-advance ke stop pending berikutnya
-    const currentIdx  = updated.findIndex((s) => s.id === stopId);
+    const currentIdx = updated.findIndex((s) => s.id === stopId);
     const nextPending = updated
       .slice(currentIdx + 1)
       .find((s) => s.status === "pending");
@@ -878,18 +898,18 @@ export default function RouteSection({
     );
     updateStops(updated);
 
-    const currentIdx  = updated.findIndex((s) => s.id === stopId);
+    const currentIdx = updated.findIndex((s) => s.id === stopId);
     const nextPending = updated
       .slice(currentIdx + 1)
       .find((s) => s.status === "pending");
     setActiveStopId(nextPending?.id ?? null);
   }
 
-  const formattedDate = new Date(routeDate).toLocaleDateString("id-ID", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
+  // FIX #7: formatDisplayDate (WITA-aware, tidak bergantung locale browser)
+  // new Date("YYYY-MM-DD") parsed sebagai UTC midnight → getDay() bisa salah
+  const formattedDate = formatDisplayDate(routeDate, {
+    weekday: true,
+    longMonth: true,
   });
 
   return (
@@ -898,7 +918,10 @@ export default function RouteSection({
       <div className="flex items-center gap-3 mb-5">
         <div
           className="w-6 h-6 rounded-full flex items-center justify-center text-[0.7rem] font-semibold shrink-0"
-          style={{ background: "var(--coffee-latte)", color: "var(--bg-primary)" }}
+          style={{
+            background: "var(--coffee-latte)",
+            color: "var(--bg-primary)",
+          }}
         >
           1
         </div>

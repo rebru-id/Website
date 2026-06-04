@@ -53,7 +53,10 @@ function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
             >
               {/* Nilai kg — tampil di atas bar jika ada */}
               {bar.kg > 0 && (
-                <span className="font-mono text-[0.58rem] text-text-muted mb-0.5">
+                <span
+                  className="font-mono text-[0.58rem] text-text-muted mb-0.5"
+                  style={{ color: "var(--text-secondary)" }}
+                >
                   {bar.kg % 1 === 0 ? bar.kg.toFixed(0) : bar.kg.toFixed(1)}
                 </span>
               )}
@@ -96,10 +99,21 @@ function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CategoryPill({ cat }: { cat: MitraCategory }) {
-  const map: Record<MitraCategory, { label: string; color: string; bg: string }> = {
-    cafe:  { label: "Cafe",  color: "var(--coffee-latte)", bg: "rgba(196,149,106,0.1)" },
-    hotel: { label: "Hotel", color: "var(--gold)",         bg: "rgba(200,168,75,0.1)"  },
-    resto: { label: "Resto", color: "var(--forest-sage)",  bg: "rgba(122,171,126,0.1)" },
+  const map: Record<
+    MitraCategory,
+    { label: string; color: string; bg: string }
+  > = {
+    cafe: {
+      label: "Cafe",
+      color: "var(--coffee-latte)",
+      bg: "rgba(196,149,106,0.1)",
+    },
+    hotel: { label: "Hotel", color: "var(--gold)", bg: "rgba(200,168,75,0.1)" },
+    resto: {
+      label: "Resto",
+      color: "var(--forest-sage)",
+      bg: "rgba(122,171,126,0.1)",
+    },
   };
   const { label, color, bg } = map[cat];
   return (
@@ -328,8 +342,10 @@ export default function HistorySection({
   }
 
   const todayTotal = weeklyData.find((d) => d.isToday)?.kg ?? 0;
-  const weekTotal  = weeklyData.reduce((acc, d) => acc + d.kg, 0);
-  const verifiedCount = historyLogs.filter((l) => l.status === "verified").length;
+  const weekTotal = weeklyData.reduce((acc, d) => acc + d.kg, 0);
+  const verifiedCount = historyLogs.filter(
+    (l) => l.status === "verified",
+  ).length;
 
   return (
     <div>

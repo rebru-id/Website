@@ -1,27 +1,29 @@
 "use client";
 // src/components/dashboard/AuthModal.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// MIGRATION: Mock auth → Supabase Auth
+// Auth Modal dengan dual-mode: mock (local dev) dan Supabase (production)
 //
-// Perubahan dari versi sebelumnya:
-//   1. Hapus MOCK_USERS sepenuhnya
-//   2. MockUser interface → RoleCandidate (tidak butuh password)
-//   3. handleLogin(): pakai supabase.auth.signInWithPassword()
-//   4. Role + name diambil dari user_metadata (di-set via Supabase SQL Editor)
-//   5. launchDashboard(): terima email dari Supabase (bukan state lokal)
-//      → email dari Supabase = canonical email, lebih reliable
-//   6. Tambah loading state → disabled saat proses login + spinner
-//   7. supabase: module-level singleton (konsisten dengan AuthModalContext.tsx)
+// Toggle via environment variable:
+//   NEXT_PUBLIC_AUTH_MODE=mock      → pakai MOCK_USERS (local dev, tidak perlu internet)
+//   NEXT_PUBLIC_AUTH_MODE=supabase  → pakai Supabase Auth (production/Vercel)
 //
-// Prerequisite (di Supabase):
-//   Setiap user di auth.users harus punya user_metadata:
-//   { "name": "Nama Lengkap", "role": "admin" }           ← single role
-//   { "name": "Multi User",   "roles": ["admin","mitra"] } ← multi role
+// Cara setup local:
+//   1. Buka file .env.local di root project
+//   2. Tambahkan: NEXT_PUBLIC_AUTH_MODE=mock
+//   3. Jalankan: npm run dev
+//   → Login dengan email/password mock tanpa perlu koneksi Supabase Auth
 //
-//   Set via SQL Editor:
-//   UPDATE auth.users
-//   SET raw_user_meta_data = '{"name":"Admin Rebru","role":"admin"}'
-//   WHERE email = 'admin@rebru.id';
+// Cara push ke production:
+//   - Tidak perlu ubah kode apapun
+//   - Di Vercel: NEXT_PUBLIC_AUTH_MODE=supabase (atau kosongkan = default supabase)
+//   - Push seperti biasa
+//
+// Mock credentials (hanya aktif saat AUTH_MODE=mock):
+//   admin@rebru.id     / rebru2025
+//   collector@rebru.id / collector123
+//   mitra@rebru.id     / mitra123
+//   gov@rebru.id       / gov123
+//   multi@rebru.id     / multi123  (admin + mitra)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from "react";
@@ -32,8 +34,48 @@ import { useAuthModal, type SessionState } from "./AuthModalContext";
 import { type UserRole } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
-// ── Singleton client — modul level ────────────────────────────────────────────
-const supabase = createClient();
+// ── Auth mode toggle ──────────────────────────────────────────────────────────
+// "mock"     = local dev, tidak butuh koneksi Supabase Auth
+// "supabase" = production, pakai Supabase signInWithPassword
+// Default ke "supabase" jika variabel tidak di-set (aman untuk production)
+const AUTH_MODE = process.env.NEXT_PUBLIC_AUTH_MODE ?? "supabase";
+
+// ── Supabase client (hanya dipakai saat AUTH_MODE=supabase) ───────────────────
+const supabase = AUTH_MODE === "supabase" ? createClient() : null;
+
+// ── Mock users (hanya aktif saat AUTH_MODE=mock) ──────────────────────────────
+interface MockUser {
+  password: string;
+  name: string;
+  roles: UserRole[];
+}
+const MOCK_USERS: Record<string, MockUser> = {
+  "admin@rebru.id": {
+    password: "rebru2025",
+    name: "Admin Rebru",
+    roles: ["admin"],
+  },
+  "collector@rebru.id": {
+    password: "collector123",
+    name: "Rebru Team",
+    roles: ["collector"],
+  },
+  "mitra@rebru.id": {
+    password: "mitra123",
+    name: "Mitra Partner",
+    roles: ["mitra"],
+  },
+  "gov@rebru.id": {
+    password: "gov123",
+    name: "Government User",
+    roles: ["government"],
+  },
+  "multi@rebru.id": {
+    password: "multi123",
+    name: "Multi Role User",
+    roles: ["admin", "mitra"],
+  },
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +150,31 @@ export default function AuthModal() {
     setLoading(true);
     setError("");
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
+    // ── MOCK MODE (local dev) ────────────────────────────────────────────────
+    if (AUTH_MODE === "mock") {
+      await new Promise((r) => setTimeout(r, 400)); // simulasi network delay
+      const user = MOCK_USERS[email.trim()];
+      setLoading(false);
+      if (!user || user.password !== password) {
+        setError("Email atau password salah. Coba lagi.");
+        setPassword("");
+        return;
+      }
+      if (user.roles.length > 1) {
+        setCandidate({
+          name: user.name,
+          roles: user.roles,
+          email: email.trim(),
+        });
+        setStep("role");
+      } else {
+        launchDashboard(user.name, user.roles[0], email.trim());
+      }
+      return;
+    }
+
+    // ── SUPABASE MODE (production) ───────────────────────────────────────────
+    const { data, error: authError } = await supabase!.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -124,8 +190,8 @@ export default function AuthModal() {
     // Ambil role dan nama dari user_metadata (di-set via Supabase SQL Editor)
     const meta = data.user.user_metadata ?? {};
     const roles: UserRole[] = Array.isArray(meta.roles)
-      ? (meta.roles as UserRole[]) // multi-role: ["admin","mitra"]
-      : [meta.role as UserRole].filter(Boolean); // single role: "admin"
+      ? (meta.roles as UserRole[])
+      : [meta.role as UserRole].filter(Boolean);
 
     const name = (meta.name as string) || data.user.email || "";
     const userEmail = data.user.email || "";
@@ -136,7 +202,6 @@ export default function AuthModal() {
     }
 
     if (roles.length > 1) {
-      // Multi-role → tampil step pemilihan role
       setCandidate({ name, roles, email: userEmail });
       setStep("role");
     } else {

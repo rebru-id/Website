@@ -222,29 +222,41 @@ export async function fetchTodayStops(): Promise<
     `,
     )
     .eq("collection_routes.route_date", today)
-    .order("completed_at", { ascending: true });
+    .order("scheduled_time", { ascending: true });
 
   if (error) throw error;
 
-  return (data ?? []).map((s: any) => ({
-    id: s.id,
-    route_id: s.route_id,
-    partner_id: s.partner_id,
-    stop_order: s.stop_order,
-    scheduled_time: s.scheduled_time,
-    estimated_kg: s.estimated_kg,
-    status: s.status,
-    actual_kg: s.actual_kg,
-    condition: s.condition,
-    skip_reason: s.skip_reason,
-    completed_at: s.completed_at,
-    location_coords: s.location_coords,
-    photo_url: null,
-    notes: s.notes,
-    partner: s.partner_applications,
-    collector_name: s.collection_routes?.collector_team?.name ?? "—",
-    route_date: s.collection_routes?.route_date ?? today,
-  }));
+  return (
+    (data ?? [])
+      .map((s: any) => ({
+        id: s.id,
+        route_id: s.route_id,
+        partner_id: s.partner_id,
+        stop_order: s.stop_order,
+        scheduled_time: s.scheduled_time,
+        estimated_kg: s.estimated_kg,
+        status: s.status,
+        actual_kg: s.actual_kg,
+        condition: s.condition,
+        skip_reason: s.skip_reason,
+        completed_at: s.completed_at,
+        location_coords: s.location_coords,
+        photo_url: null,
+        notes: s.notes,
+        partner: s.partner_applications,
+        collector_name: s.collection_routes?.collector_team?.name ?? "—",
+        route_date: s.collection_routes?.route_date ?? today,
+      }))
+      // Sort JS sebagai safety net — PostgREST order bisa berubah perilaku
+      // tergantung versi, terutama untuk nilai null.
+      .sort((a: any, b: any) => {
+        if (a.scheduled_time && b.scheduled_time)
+          return a.scheduled_time.localeCompare(b.scheduled_time);
+        if (a.scheduled_time) return -1;
+        if (b.scheduled_time) return 1;
+        return a.stop_order - b.stop_order;
+      })
+  );
 }
 
 /**
@@ -278,12 +290,6 @@ export async function fetchCollectorStats(): Promise<
     );
     throw mErr;
   }
-  console.log(
-    "[fetchCollectorStats] members fetched:",
-    members?.length ?? 0,
-    members,
-  );
-
   // Query routes dulu (filter tanggal di tabel induk) → stops di-embed
   // Ini adalah pendekatan yang benar: filter `.gte/.lte` hanya valid pada tabel utama query
   const { data: routes } = await supabase
@@ -469,7 +475,8 @@ export async function fetchMyTodayRoute(collectorEmail: string): Promise<{
     )
     .eq("collector_id", member.id)
     .eq("route_date", today)
-    .order("collection_stops(stop_order)")
+    // Tidak pakai .order() pada embedded table — PostgREST tidak support ini.
+    // Sorting stop_order ditangani oleh normalizeRoute() di JS setelah fetch.
     .maybeSingle();
 
   if (rErr) throw rErr;
@@ -596,7 +603,18 @@ export async function fetchCollectorHistory(
 
 function normalizeRoute(raw: any): RouteWithCollector {
   const stops: StopWithPartner[] = (raw.collection_stops ?? [])
-    .sort((a: any, b: any) => a.stop_order - b.stop_order)
+    .sort((a: any, b: any) => {
+      // Primary sort: scheduled_time (urutan kronologis penjemputan)
+      // Ini yang user lihat di RouteSection — harus sesuai jam jadwal, bukan urutan input admin
+      if (a.scheduled_time && b.scheduled_time) {
+        return a.scheduled_time.localeCompare(b.scheduled_time);
+      }
+      // Stops dengan scheduled_time ke atas, yang null ke bawah
+      if (a.scheduled_time) return -1;
+      if (b.scheduled_time) return 1;
+      // Fallback: stop_order (urutan insert) jika keduanya tidak punya scheduled_time
+      return a.stop_order - b.stop_order;
+    })
     .map((s: any) => ({
       id: s.id,
       route_id: raw.id,
@@ -698,7 +716,6 @@ export async function fetchAllCollectors(): Promise<CollectorMember[]> {
     console.error("[fetchAllCollectors] error:", error.message, error);
     throw error;
   }
-  console.log("[fetchAllCollectors] fetched:", data?.length ?? 0, data);
   return (data ?? []) as CollectorMember[];
 }
 
