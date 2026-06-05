@@ -200,6 +200,20 @@
   --nav-scrolled-bg: rgba(26, 15, 10, 0.92);
   --nav-scrolled-border: var(--border-default);
 
+  --nav-link-default: #b8a898;
+  --nav-link-hover: #f0ebe3;
+  --nav-link-active: #c4956a;
+  --nav-link-underline: #c4956a;
+  --nav-contact-border: rgba(74, 124, 78, 0.6);
+  --nav-contact-text: #7aab7e;
+  --nav-contact-hover-bg: #1a3a1b;
+  --nav-contact-hover-text: #c8dfc9;
+  --nav-contact-hover-border: #7aab7e;
+  --nav-contact-active-bg: #1a3a1b;
+  --nav-contact-active-text: #c4956a;
+  --nav-mobile-link-default: #b8a898;
+  --nav-mobile-link-active: #c4956a;
+
   /* ── ICON ── */
   --icon-sun: #f4d38a; /* kuning senja */
   --icon-moon: #8b5e3c; /* coklat soft */
@@ -372,6 +386,20 @@
   /* ── Navbar ── */
   --nav-scrolled-bg: rgba(245, 239, 230, 0.94);
   --nav-scrolled-border: var(--border-default);
+
+  --nav-link-default: #4a2c1a;
+  --nav-link-hover: #1a0f0a;
+  --nav-link-active: #b8844f;
+  --nav-link-underline: #b8844f;
+  --nav-contact-border: rgba(58, 102, 64, 0.55);
+  --nav-contact-text: #2d5a2e;
+  --nav-contact-hover-bg: rgba(45, 90, 46, 0.12);
+  --nav-contact-hover-text: #1a3a1b;
+  --nav-contact-hover-border: #2d5a2e;
+  --nav-contact-active-bg: rgba(45, 90, 46, 0.15);
+  --nav-contact-active-text: #b8844f;
+  --nav-mobile-link-default: #4a2c1a;
+  --nav-mobile-link-active: #b8844f;
 
   /* ── ICON ── */
   --icon-sun: #e6b85c; /* sedikit lebih gelap biar kontras */

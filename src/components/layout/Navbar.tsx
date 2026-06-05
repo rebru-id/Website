@@ -90,11 +90,17 @@ export default function Navbar() {
                 className={cn(
                   "text-[0.85rem] font-medium tracking-[0.12em] uppercase transition-colors duration-300 relative",
                   "after:absolute after:bottom-[-4px] after:left-0 after:h-px after:transition-all after:duration-300",
-                  "after:bg-coffee-latte",
+                  "after:bg-[var(--nav-link-underline)]",
                   pathname === href
-                    ? "text-coffee-latte after:w-full"
-                    : "text-text-secondary hover:text-text-primary after:w-0 hover:after:w-full",
+                    ? "after:w-full"
+                    : "after:w-0 hover:after:w-full",
                 )}
+                style={{
+                  color:
+                    pathname === href
+                      ? "var(--nav-link-active)"
+                      : "var(--nav-link-default)",
+                }}
               >
                 {label}
               </Link>
@@ -102,14 +108,38 @@ export default function Navbar() {
 
             <Link
               href={CONTACT_HREF}
-              className={cn(
-                "px-6 py-2.5 rounded-pill text-[0.82rem] tracking-[0.1em] uppercase",
-                "transition-all duration-300 border",
-                "border-forest-leaf text-forest-sage",
-                "hover:bg-forest-dark hover:text-forest-mist hover:border-forest-sage",
-                pathname === CONTACT_HREF && "bg-forest-dark text-forest-mist",
-              )}
+              className="px-6 py-2.5 rounded-pill text-[0.82rem] tracking-[0.1em] uppercase transition-all duration-300 border"
+              style={{
+                borderColor: "var(--nav-contact-border)",
+                color:
+                  pathname === CONTACT_HREF
+                    ? "var(--nav-contact-active-text)"
+                    : "var(--nav-contact-text)",
+                backgroundColor:
+                  pathname === CONTACT_HREF
+                    ? "var(--nav-contact-active-bg)"
+                    : "transparent",
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget;
+                el.style.backgroundColor = "var(--nav-contact-hover-bg)";
+                el.style.color = "var(--nav-contact-hover-text)";
+                el.style.borderColor = "var(--nav-contact-hover-border)";
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget;
+                el.style.backgroundColor =
+                  pathname === CONTACT_HREF
+                    ? "var(--nav-contact-active-bg)"
+                    : "transparent";
+                el.style.color =
+                  pathname === CONTACT_HREF
+                    ? "var(--nav-contact-active-text)"
+                    : "var(--nav-contact-text)";
+                el.style.borderColor = "var(--nav-contact-border)";
+              }}
             >
+              {" "}
               {CONTACT_LABEL}
             </Link>
 
@@ -159,19 +189,31 @@ export default function Navbar() {
             <Link
               key={href}
               href={href}
-              className={cn(
-                "text-base font-medium tracking-[0.1em] uppercase transition-colors",
-                pathname === href
-                  ? "text-coffee-latte"
-                  : "text-text-secondary hover:text-text-primary",
-              )}
+              className="text-base font-medium tracking-[0.1em] uppercase transition-colors"
+              style={{
+                color:
+                  pathname === href
+                    ? "var(--nav-mobile-link-active)"
+                    : "var(--nav-mobile-link-default)",
+              }}
             >
               {label}
             </Link>
           ))}
           <Link
             href={CONTACT_HREF}
-            className="mt-3 px-6 py-3 rounded-pill border border-forest-leaf text-forest-sage text-[0.85rem] tracking-[0.1em] uppercase text-center"
+            className="mt-3 px-6 py-3 rounded-pill border text-[0.85rem] tracking-[0.1em] uppercase text-center"
+            style={{
+              borderColor: "var(--nav-contact-border)",
+              color:
+                pathname === CONTACT_HREF
+                  ? "var(--nav-contact-active-text)"
+                  : "var(--nav-contact-text)",
+              backgroundColor:
+                pathname === CONTACT_HREF
+                  ? "var(--nav-contact-active-bg)"
+                  : "transparent",
+            }}
           >
             {CONTACT_LABEL}
           </Link>
