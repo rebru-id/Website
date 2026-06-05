@@ -1,15 +1,27 @@
 // src/lib/products.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Sprint 4A — Products fetch dari Supabase
+// FIX: DYNAMIC_SERVER_USAGE di /products/[slug]
 //
-// FIX dari versi sebelumnya:
-//   1. createClient() di Next.js 16 adalah ASYNC (cookies() dari next/headers
-//      sudah async sejak Next.js 15). Wajib: const supabase = await createClient()
-//   2. fetchAllFromSupabase didefinisikan ulang secara eksplisit agar tidak
-//      hilang saat copy-paste file yang panjang
+// ROOT CAUSE:
+//   createClient() dari @/lib/supabase/server memanggil cookies() dari
+//   next/headers. cookies() adalah Dynamic API — Next.js tidak bisa
+//   pre-render halaman secara static jika ia ditemukan di render tree.
+//   generateStaticParams pada /products/[slug] mencoba pre-render semua
+//   slug saat build → crash DYNAMIC_SERVER_USAGE.
+//
+// FIX:
+//   Ganti import dari server client ke supabaseAnon — client tanpa cookies,
+//   khusus untuk public data fetch. Products tidak membutuhkan auth/RLS,
+//   jadi anon key sudah cukup dan fetch bisa berjalan sepenuhnya static.
+//
+// PERUBAHAN dari versi sebelumnya:
+//   - HAPUS: import { createClient } from "@/lib/supabase/server"
+//   - TAMBAH: import { supabaseAnon } from "@/lib/supabase/anon"
+//   - fetchAll(): tidak lagi async karena tidak perlu await createClient()
+//     (supabaseAnon adalah module-level singleton — langsung siap pakai)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createClient } from "@/lib/supabase/server";
+import { supabaseAnon } from "@/lib/supabase/anon";
 import { mapSupabaseToUIProduct } from "@/lib/mappers";
 import type { UIProduct } from "@/types";
 
@@ -330,16 +342,15 @@ const FALLBACK: UIProduct[] = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core fetch function
-// FIX: createClient() di Next.js 15+ / 16 adalah ASYNC karena cookies()
-//      dari next/headers sudah async. Wajib: await createClient()
+//
+// FIX: Tidak lagi memakai server client (cookies-based).
+//      supabaseAnon adalah module-level singleton — tidak ada cookies(),
+//      tidak ada Dynamic API, aman untuk generateStaticParams + ISR.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function fetchAll(): Promise<UIProduct[]> {
   try {
-    // KUNCI: await createClient() — bukan createClient()
-    const supabase = await createClient();
-
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAnon
       .from("products")
       .select("*, product_variants(*)")
       .eq("is_active", true)
