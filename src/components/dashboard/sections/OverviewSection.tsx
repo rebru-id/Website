@@ -12,7 +12,7 @@
 //
 // Data yang BELUM tersedia (empty state ditampilkan):
 //   batches / production_runs  → Bio-Conversion efficiency + Integration chart
-//   Aktifkan dengan uncomment blok "TODO: Supabase" saat tabel tersedia.
+//   Aktifkan dengan uncomment blok "TODO:Supabase" saat tabel tersedia.
 //
 // Tidak ada aksi di halaman ini — semua interaksi berupa navigasi ke section.
 // ─────────────────────────────────────────────────────────────────────────────
