@@ -28,6 +28,7 @@ import {
 } from "@/utils/date";
 
 import {
+  verifyStop,
   fetchWeekRoutes,
   fetchTodayRoutes,
   fetchTodayStops,
@@ -39,6 +40,7 @@ import {
   updateCollectorStatus,
   deleteCollectorMember,
   fetchCollectorHistory7Days,
+  fetchWeekStops,
   type RouteWithCollector,
   type ActivePartner,
   type CollectorMember,
@@ -72,6 +74,7 @@ interface DayColumn {
 
 interface CollectorMonitor {
   id: string;
+  collectorId: string;
   initials: string;
   name: string;
   area: string;
@@ -83,6 +86,9 @@ interface CollectorMonitor {
   lastCheckin: string;
   noCheckinMinutes?: number;
   totalKg?: number;
+  phone?: string;
+  activityIndicator: "aktif" | "standby" | "no-show" | "gap-panjang";
+  stops: any[]; // detail stops untuk panel Detail
 }
 
 interface LogEntry {
@@ -95,6 +101,12 @@ interface LogEntry {
   status: LogStatus;
   isSkipped?: boolean;
   skipReason?: string;
+
+  // Field detail untuk expand row
+  alamat?: string;
+  locationCoords?: string;
+  notes?: string;
+  routeDate?: string;
 }
 
 interface CollectorTeam {
@@ -969,6 +981,7 @@ function ScheduleTab({
       setSelectedPartner("");
       setSelectedCollector("");
       setEstimatedKg("");
+      onRefreshWeek();
     } catch (err: any) {
       const msg = err?.message ?? JSON.stringify(err);
       console.error("Gagal tambah stop:", msg);
@@ -1702,8 +1715,28 @@ function ScheduleTab({
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2 — Schedule Monitor
 // ─────────────────────────────────────────────────────────────────────────────
+function formatCheckinDuration(minsAgo: number): string {
+  if (minsAgo === 999) return "belum ada check-in sama sekali hari ini";
+  if (minsAgo >= 120) return "lebih dari 2 jam";
+  if (minsAgo >= 60) {
+    const hours = Math.floor(minsAgo / 60);
+    const mins = minsAgo % 60;
+    return mins === 0 ? `${hours} jam` : `${hours} jam ${mins} menit`;
+  }
+  return `${minsAgo} menit`;
+}
 
-function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
+function MonitorTab({
+  todayRoutes,
+  acknowledgedIds,
+  onAcknowledge,
+}: {
+  todayRoutes: RouteWithCollector[];
+  acknowledgedIds: Set<string>;
+  onAcknowledge: (collectorId: string) => void;
+}) {
+  const [detailCollector, setDetailCollector] =
+    useState<CollectorMonitor | null>(null);
   // Konversi RouteWithCollector[] → CollectorMonitor[] untuk UI
   const COLLECTORS_MONITOR: CollectorMonitor[] = todayRoutes.map((r) => {
     const lastDone = r.stops
@@ -1715,28 +1748,53 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
       ? Math.floor(
           (Date.now() - new Date(lastDone.completed_at).getTime()) / 60_000,
         )
-      : 0;
+      : r.stops_done === 0
+        ? 999
+        : 0;
     const lastCheckin = lastDone?.completed_at
       ? toLocalTimeStr(lastDone.completed_at)
       : "—";
+
+    // Pending stops yang waktu jadwalnya sudah lewat (overdue)
+    const overdueStops = r.stops.filter(
+      (s) => s.status === "pending" && isTimeOverdue(s.scheduled_time),
+    );
+    // Pending stops yang jadwalnya belum tiba (future)
+    const futureStops = r.stops.filter(
+      (s) => s.status === "pending" && !isTimeOverdue(s.scheduled_time),
+    );
+
     let status: CollectorStatus = "ontrack";
-    if (r.stops_done === r.stops_total && r.stops_total > 0) status = "done";
-    else if (minsAgo > 75) status = "alert";
-    else if (
-      r.stops.some(
-        (s) => s.status === "pending" && isTimeOverdue(s.scheduled_time),
-      )
-    )
+    if (r.stops_done === r.stops_total && r.stops_total > 0) {
+      status = "done";
+    } else if (overdueStops.length > 0 && minsAgo > 75) {
+      status = "alert";
+    } else if (overdueStops.length > 0) {
       status = "late";
+    }
+
+    // Aktivitas indicator — dimensi terpisah dari status utama
+    // aktif   = check-in dalam 45 menit terakhir
+    // no-show = ada stop overdue DAN belum pernah check-in sama sekali
+    // standby = shift belum dimulai / belum ada yang overdue
+    const activityIndicator: "aktif" | "standby" | "no-show" | "gap-panjang" =
+      minsAgo !== 999 && minsAgo <= 45
+        ? "aktif"
+        : minsAgo === 999 && overdueStops.length > 0
+          ? "no-show"
+          : minsAgo !== 999 && minsAgo > 45 && overdueStops.length > 0
+            ? "gap-panjang"
+            : "standby";
+
     const pending = r.stops.filter((s) => s.status === "pending");
     const estFinish =
       pending.length === 0
         ? "Selesai"
-        : pending[pending.length - 1].scheduled_time
-          ? (pending[pending.length - 1].scheduled_time ?? "—")
-          : "—";
+        : (pending[pending.length - 1].scheduled_time ?? "—");
+
     return {
       id: r.id,
+      collectorId: r.collector?.id ?? r.id,
       initials: r.collector?.initials ?? "??",
       name: r.collector?.name ?? "—",
       area: r.collector?.area ?? "—",
@@ -1748,6 +1806,9 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
       lastCheckin,
       noCheckinMinutes: minsAgo,
       totalKg: r.total_actual_kg,
+      phone: (r.collector as any)?.phone ?? undefined,
+      activityIndicator,
+      stops: r.stops ?? [],
     };
   });
 
@@ -1819,6 +1880,34 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
     done: 3,
   };
 
+  type ActivityIndicator = "aktif" | "standby" | "no-show" | "gap-panjang";
+
+  const ACTIVITY_STYLE: Record<
+    ActivityIndicator,
+    { dot: string; label: string; color: string }
+  > = {
+    aktif: {
+      dot: "var(--forest-sage)",
+      label: "Aktif",
+      color: "var(--forest-sage)",
+    },
+    standby: {
+      dot: "var(--text-muted)",
+      label: "Standby",
+      color: "var(--text-muted)",
+    },
+    "no-show": {
+      dot: "var(--color-error)",
+      label: "No Show",
+      color: "var(--color-error)",
+    },
+    "gap-panjang": {
+      dot: "var(--color-warning)",
+      label: "Tidak Aktif",
+      color: "var(--color-warning)",
+    },
+  };
+
   const SORTED_MONITOR = [...COLLECTORS_MONITOR].sort(
     (a, b) => STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status],
   );
@@ -1846,7 +1935,9 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
     },
   ];
 
-  const alertCollector = COLLECTORS_MONITOR.find((c) => c.status === "alert");
+  const alertCollector = COLLECTORS_MONITOR.find(
+    (c) => c.status === "alert" && !acknowledgedIds.has(c.collectorId),
+  );
 
   return (
     <div>
@@ -1855,29 +1946,98 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
         <div
           className="flex items-center gap-3 rounded-lg mb-4 px-4 py-3"
           style={{
-            background: "rgba(160,72,72,0.08)",
-            border: "0.5px solid rgba(160,72,72,0.35)",
+            background:
+              alertCollector.noCheckinMinutes !== 999 &&
+              (alertCollector.noCheckinMinutes ?? 0) >= 120
+                ? "rgba(160,72,72,0.13)"
+                : "rgba(160,72,72,0.08)",
+            border:
+              alertCollector.noCheckinMinutes !== 999 &&
+              (alertCollector.noCheckinMinutes ?? 0) >= 120
+                ? "1px solid rgba(160,72,72,0.55)"
+                : "0.5px solid rgba(160,72,72,0.35)",
           }}
         >
-          <span
-            className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse"
-            style={{ background: "var(--color-error)" }}
-          />
+          {alertCollector.noCheckinMinutes !== 999 &&
+          (alertCollector.noCheckinMinutes ?? 0) >= 120 ? (
+            <i
+              className="fas fa-exclamation-triangle flex-shrink-0 text-xs"
+              style={{ color: "var(--color-error)" }}
+            />
+          ) : (
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse"
+              style={{ background: "var(--color-error)" }}
+            />
+          )}
           <p
             className="flex-1 text-xs"
             style={{ color: "var(--text-primary)" }}
           >
-            <strong>{alertCollector.name}</strong> tidak ada check-in selama{" "}
-            <strong>{alertCollector.noCheckinMinutes} menit</strong> — Stop{" "}
-            {alertCollector.stopsDone}/{alertCollector.stopsTotal}, Area{" "}
+            <strong>{alertCollector.name}</strong>{" "}
+            {alertCollector.noCheckinMinutes === 999
+              ? "belum ada check-in sama sekali hari ini"
+              : `tidak check-in selama ${formatCheckinDuration(
+                  alertCollector.noCheckinMinutes ?? 0,
+                )}`}
+            {alertCollector.noCheckinMinutes !== 999 &&
+              (alertCollector.noCheckinMinutes ?? 0) >= 120 && (
+                <strong style={{ color: "var(--color-error)" }}>
+                  {" "}
+                  — segera hubungi
+                </strong>
+              )}{" "}
+            — Stop {alertCollector.stopsDone}/{alertCollector.stopsTotal}, Area{" "}
             {alertCollector.area}
           </p>
-          <button
+
+          {/* Tombol Sudah Dilihat */}
+          {acknowledgedIds.has(alertCollector.id) ? (
+            <span
+              className="flex-shrink-0 px-3 py-1.5 rounded text-[10px]"
+              style={{
+                background: "rgba(45,90,46,0.15)",
+                color: "var(--forest-sage)",
+                border: "0.5px solid rgba(45,90,46,0.3)",
+                cursor: "default",
+              }}
+            >
+              ✓ Tercatat
+            </span>
+          ) : (
+            <button
+              className="flex-shrink-0 px-3 py-1.5 rounded text-[10px] transition-all"
+              onClick={() => onAcknowledge(alertCollector.collectorId)}
+              style={{
+                background: "rgba(45,90,46,0.15)",
+                color: "var(--forest-sage)",
+                border: "0.5px solid rgba(45,90,46,0.3)",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(45,90,46,0.25)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(45,90,46,0.15)")
+              }
+            >
+              Sudah Dilihat
+            </button>
+          )}
+
+          {/*Tombol Hubungi*/}
+          <a
+            href={
+              alertCollector.phone ? `tel:${alertCollector.phone}` : undefined
+            }
             className="flex-shrink-0 px-3 py-1.5 rounded text-[10px] transition-all"
             style={{
               background: "rgba(160,72,72,0.15)",
               color: "var(--color-error)",
               border: "0.5px solid rgba(160,72,72,0.4)",
+              cursor: alertCollector.phone ? "pointer" : "not-allowed",
+              opacity: alertCollector.phone ? 1 : 0.5,
+              textDecoration: "none",
             }}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background = "rgba(160,72,72,0.25)")
@@ -1887,7 +2047,7 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
             }
           >
             Hubungi →
-          </button>
+          </a>
         </div>
       )}
 
@@ -2031,6 +2191,42 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
                 />
               </div>
 
+              {/* Aktivitas Indicator */}
+              {c.status !== "done" &&
+                (() => {
+                  const act = ACTIVITY_STYLE[c.activityIndicator];
+                  return (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                        style={{
+                          background: act.dot,
+                          ...(c.activityIndicator === "aktif" && {
+                            animation: "pulse 2s ease-in-out infinite",
+                            boxShadow: `0 0 4px ${act.dot}`,
+                          }),
+                        }}
+                      />
+                      <span
+                        className="text-[10px]"
+                        style={{
+                          color: act.color,
+                          fontFamily: "var(--font-space-mono)",
+                        }}
+                      >
+                        {act.label}
+                        {c.activityIndicator === "aktif" &&
+                          ` · ${c.lastCheckin}`}
+                        {c.activityIndicator === "standby"}
+                        {c.activityIndicator === "no-show" &&
+                          " · belum ada check-in"}
+                        {c.activityIndicator === "gap-panjang" &&
+                          ` · ${c.lastCheckin}`}
+                      </span>
+                    </div>
+                  );
+                })()}
+
               {/* Footer */}
               <div className="flex items-center justify-between">
                 <p
@@ -2041,7 +2237,10 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
                     `Total pickup: ${c.totalKg} kg`
                   ) : c.status === "alert" ? (
                     <span style={{ color: "var(--color-error)" }}>
-                      ⚠ {c.noCheckinMinutes} mnt tanpa check-in
+                      ⚠{" "}
+                      {c.noCheckinMinutes === 999
+                        ? "Belum ada check-in hari ini"
+                        : `${formatCheckinDuration(c.noCheckinMinutes ?? 0)} tanpa check-in`}
                     </span>
                   ) : (
                     `Check-in terakhir: ${c.lastCheckin}`
@@ -2049,18 +2248,27 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
                 </p>
                 <div className="flex gap-1.5">
                   {c.status === "alert" && (
-                    <button
+                    <a
+                      href={c.phone ? `tel:${c.phone}` : undefined}
                       className="px-2 py-1 rounded text-[9px]"
                       style={{
                         background: "rgba(160,72,72,0.1)",
                         color: "var(--color-error)",
                         border: "0.5px solid rgba(160,72,72,0.35)",
+                        cursor: c.phone ? "pointer" : "not-allowed",
+                        opacity: c.phone ? 1 : 0.5,
                       }}
+                      title={
+                        c.phone
+                          ? `Hubungi ${c.name}`
+                          : "Nomor HP tidak tersedia"
+                      }
                     >
                       Hubungi
-                    </button>
+                    </a>
                   )}
                   <button
+                    onClick={() => setDetailCollector(c)}
                     className="px-2 py-1 rounded text-[9px]"
                     style={{
                       background: "var(--bg-elevated)",
@@ -2076,6 +2284,204 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
           );
         })}
       </div>
+
+      {/* ── Panel Detail Collector ─────────────────────────────────────── */}
+      {detailCollector && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+            onClick={() => setDetailCollector(null)}
+          />
+          <div
+            className="fixed top-0 right-0 h-full w-80 z-[51] flex flex-col overflow-y-auto"
+            style={{
+              background: "var(--bg-surface)",
+              borderLeft: "1px solid var(--border-default)",
+            }}
+          >
+            {/* Header */}
+            <div
+              className="flex items-start justify-between px-5 py-4 flex-shrink-0"
+              style={{ borderBottom: "0.5px solid var(--border-subtle)" }}
+            >
+              <div>
+                <p
+                  className="font-semibold text-sm"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {detailCollector.name}
+                </p>
+                <p
+                  className="text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {detailCollector.area} · {detailCollector.truck}
+                </p>
+                <div className="mt-1.5">
+                  <StatusBadge
+                    variant={detailCollector.status as BadgeVariant}
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailCollector(null)}
+                className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0"
+                style={{
+                  border: "0.5px solid var(--border-subtle)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <i className="fas fa-times text-xs" />
+              </button>
+            </div>
+
+            {/* Stats */}
+            <div
+              className="grid grid-cols-2 gap-2 px-5 py-3 flex-shrink-0"
+              style={{ borderBottom: "0.5px solid var(--border-subtle)" }}
+            >
+              {[
+                {
+                  label: "Progress",
+                  value: `${detailCollector.stopsDone} / ${detailCollector.stopsTotal}`,
+                },
+                {
+                  label: "Total kg",
+                  value: detailCollector.totalKg
+                    ? `${detailCollector.totalKg} kg`
+                    : "—",
+                },
+                {
+                  label: "Check-in terakhir",
+                  value: detailCollector.lastCheckin,
+                },
+                { label: "Est. selesai", value: detailCollector.estFinish },
+              ].map((s) => (
+                <div key={s.label}>
+                  <p
+                    className="text-[10px] uppercase tracking-wider"
+                    style={{
+                      color: "var(--text-muted)",
+                      fontFamily: "var(--font-space-mono)",
+                    }}
+                  >
+                    {s.label}
+                  </p>
+                  <p
+                    className="font-semibold text-sm mt-0.5"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {s.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Stops list */}
+            <div className="flex-1 px-5 py-4">
+              <p
+                className="text-[10px] uppercase tracking-wider mb-3"
+                style={{
+                  color: "var(--text-muted)",
+                  fontFamily: "var(--font-space-mono)",
+                }}
+              >
+                Rute hari ini ({detailCollector.stops.length} stop)
+              </p>
+              {detailCollector.stops.length === 0 ? (
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Tidak ada data stop.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {[...detailCollector.stops]
+                    .sort((a, b) => (a.stop_order ?? 0) - (b.stop_order ?? 0))
+                    .map((stop: any, i: number) => {
+                      const isDone = stop.status === "done";
+                      const isSkipped = stop.status === "skipped";
+                      return (
+                        <div
+                          key={stop.id ?? i}
+                          className="rounded-lg px-3 py-2.5"
+                          style={{
+                            background: "var(--bg-card)",
+                            border: "0.5px solid var(--border-subtle)",
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className="text-xs font-medium truncate"
+                                style={{ color: "var(--text-primary)" }}
+                              >
+                                {stop.partner?.organization ?? "—"}
+                              </p>
+                              <p
+                                className="text-[11px] mt-0.5"
+                                style={{ color: "var(--text-muted)" }}
+                              >
+                                {stop.scheduled_time ?? "—"}
+                                {isDone && stop.completed_at && (
+                                  <span style={{ color: "var(--forest-sage)" }}>
+                                    {" "}
+                                    → selesai{" "}
+                                    {toLocalTimeStr(stop.completed_at)}
+                                  </span>
+                                )}
+                              </p>
+                              {isDone && stop.actual_kg && (
+                                <p
+                                  className="text-[11px] font-medium mt-0.5"
+                                  style={{ color: "var(--text-primary)" }}
+                                >
+                                  {stop.actual_kg} kg · {stop.condition ?? "—"}
+                                </p>
+                              )}
+                              {isSkipped && stop.skip_reason && (
+                                <p
+                                  className="text-[11px] mt-0.5"
+                                  style={{ color: "#f87171" }}
+                                >
+                                  Skip: {stop.skip_reason}
+                                </p>
+                              )}
+                            </div>
+                            <StatusBadge
+                              variant={
+                                isDone ? "done" : isSkipped ? "skip" : "pending"
+                              }
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer — Hubungi */}
+            {detailCollector.phone && (
+              <div
+                className="px-5 py-4 flex-shrink-0"
+                style={{ borderTop: "0.5px solid var(--border-subtle)" }}
+              >
+                <a
+                  href={`tel:${detailCollector.phone}`}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded text-sm"
+                  style={{
+                    background: "rgba(196,136,47,0.1)",
+                    color: "var(--coffee-latte)",
+                    border: "0.5px solid rgba(196,136,47,0.3)",
+                  }}
+                >
+                  <i className="fas fa-phone text-xs" />
+                  Hubungi {detailCollector.name.split(" ")[0]}
+                </a>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2086,13 +2492,18 @@ function MonitorTab({ todayRoutes }: { todayRoutes: RouteWithCollector[] }) {
 
 function LogTab({
   stops,
+  weekStops,
   totalScheduled,
+  onVerify,
 }: {
   stops: any[];
+  weekStops: any[];
   totalScheduled: number;
+  onVerify?: (stopID: string) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | "today" | "week">("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Konversi stops dari Supabase → LogEntry shape untuk UI
   const LOG_ENTRIES: LogEntry[] = stops.map((s) => ({
@@ -2107,14 +2518,41 @@ function LogTab({
     status: (s.status === "skipped" ? "skip" : s.status) as LogStatus,
     isSkipped: s.status === "skipped",
     skipReason: s.skip_reason ?? undefined,
+    route_date: s.route_date,
+    alamat: s.partner?.alamat_detail ?? undefined,
+    locationCoords: s.location_coords ?? undefined,
+    notes: s.notes ?? undefined,
+    routeDate: s.route_date ?? undefined,
   }));
 
   // Filter entries berdasarkan pilihan
   const today = todayWITA();
-  const displayedEntries = LOG_ENTRIES.filter((e) => {
-    if (filter === "today") return (e as any).route_date === today;
-    return true;
-  });
+  const WEEK_ENTRIES: LogEntry[] = weekStops.map((s) => ({
+    id: s.id,
+    partner: s.partner?.organization ?? "—",
+    collector: s.collector_name ?? "—",
+    time: s.completed_at
+      ? toLocalTimeStr(s.completed_at)
+      : (s.scheduled_time ?? "—"),
+    condition: s.condition ?? "",
+    kg: s.actual_kg ?? undefined,
+    status: (s.status === "skipped" ? "skip" : s.status) as LogStatus,
+    isSkipped: s.status === "skipped",
+    skipReason: s.skip_reason ?? undefined,
+    route_date: s.route_date,
+    alamat: s.partner?.alamat_detail ?? undefined,
+    locationCoords: s.location_coords ?? undefined,
+    notes: s.notes ?? undefined,
+    routeDate: s.route_date ?? undefined,
+  }));
+
+  const displayedEntries =
+    filter === "week"
+      ? WEEK_ENTRIES
+      : LOG_ENTRIES.filter((e) => {
+          if (filter === "today") return (e as any).route_date === today;
+          return true;
+        });
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -2361,7 +2799,9 @@ function LogTab({
               >
                 {filter === "today"
                   ? "Belum ada log hari ini"
-                  : "Belum ada log untuk periode ini"}
+                  : filter === "week"
+                    ? "Belum ada log minggu ini"
+                    : "Belum ada log untuk periode ini"}
               </p>
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                 {totalScheduled > 0
@@ -2420,86 +2860,241 @@ function LogTab({
           const s = LOG_STATUS_STYLE[entry.status];
           const isChecked = selected.has(entry.id);
           return (
-            <div
-              key={entry.id}
-              className="flex items-center px-4 py-3 cursor-pointer transition-all"
-              onClick={() => toggleSelect(entry.id)}
-              style={{
-                borderBottom: "0.5px solid var(--border-subtle)",
-                background: isChecked
-                  ? "rgba(196,136,47,0.06)"
-                  : "var(--bg-card)",
-              }}
-              onMouseEnter={(e) => {
-                if (!isChecked)
-                  e.currentTarget.style.background = "var(--bg-elevated)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isChecked)
-                  e.currentTarget.style.background = "var(--bg-card)";
-              }}
-            >
-              <div className="w-6 mr-3 flex-shrink-0">
-                <input
-                  type="checkbox"
-                  style={{ accentColor: "var(--coffee-latte)" }}
-                  checked={isChecked}
-                  onChange={() => toggleSelect(entry.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
+            <div key={entry.id}>
+              {/* Row utama */}
+              <div
+                className="flex items-center px-4 py-3 cursor-pointer transition-all"
+                onClick={() => toggleSelect(entry.id)}
+                style={{
+                  borderBottom:
+                    expandedId === entry.id
+                      ? "none"
+                      : "0.5px solid var(--border-subtle)",
+                  background: isChecked
+                    ? "rgba(196,136,47,0.06)"
+                    : "var(--bg-card)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isChecked)
+                    e.currentTarget.style.background = "var(--bg-elevated)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isChecked)
+                    e.currentTarget.style.background = "var(--bg-card)";
+                }}
+              >
+                <div className="w-6 mr-3 flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    style={{ accentColor: "var(--coffee-latte)" }}
+                    checked={isChecked}
+                    onChange={() => toggleSelect(entry.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p
+                    className="text-xs font-medium"
+                    style={{
+                      color: entry.isSkipped
+                        ? "var(--text-muted)"
+                        : "var(--text-primary)",
+                      textDecoration: entry.isSkipped ? "line-through" : "none",
+                    }}
+                  >
+                    {entry.partner}
+                  </p>
+                  <p
+                    className="text-[10px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {entry.collector} · {entry.time}
+                    {entry.skipReason
+                      ? ` · ${entry.skipReason}`
+                      : entry.condition
+                        ? ` · ${entry.condition}`
+                        : ""}
+                  </p>
+                </div>
+                <div className="w-16 text-right">
+                  <span
+                    className="text-xs font-medium"
+                    style={{
+                      color: entry.kg
+                        ? "var(--coffee-latte)"
+                        : "var(--text-muted)",
+                    }}
+                  >
+                    {entry.kg ? `${entry.kg} kg` : "—"}
+                  </span>
+                </div>
+                <div className="w-24 flex justify-center">
+                  <StatusBadge variant={entry.status as BadgeVariant} />
+                </div>
+                <div className="w-14 text-right">
+                  {entry.status === "pending" ? (
+                    <button
+                      className="px-2 py-1 rounded text-[10px]"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!onVerify) return;
+                        try {
+                          await onVerify(entry.id);
+                        } catch {
+                          // error sudah dihandle di OperationalSection
+                        }
+                      }}
+                      style={{
+                        background: "rgba(45,90,46,0.12)",
+                        color: "var(--forest-sage)",
+                        border: "0.5px solid rgba(45,90,46,0.3)",
+                      }}
+                    >
+                      Verifikasi
+                    </button>
+                  ) : (
+                    <button
+                      className="px-2 py-1 rounded text-[10px]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedId(
+                          expandedId === entry.id ? null : entry.id,
+                        );
+                      }}
+                      style={{
+                        background:
+                          expandedId === entry.id
+                            ? "rgba(196,136,47,0.12)"
+                            : "rgba(196,136,47,0.08)",
+                        color:
+                          expandedId === entry.id
+                            ? "var(--coffee-latte)"
+                            : "var(--coffee-latte)",
+                        border:
+                          expandedId === entry.id
+                            ? "0.5px solid rgba(196,136,47,0.5)"
+                            : "0.5px solid rgba(196,136,47,0.3)",
+                      }}
+                    >
+                      {expandedId === entry.id ? "Tutup" : "Detail"}
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p
-                  className="text-xs font-medium"
-                  style={{
-                    color: entry.isSkipped
-                      ? "var(--text-muted)"
-                      : "var(--text-primary)",
-                    textDecoration: entry.isSkipped ? "line-through" : "none",
-                  }}
-                >
-                  {entry.partner}
-                </p>
-                <p
-                  className="text-[10px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {entry.collector} · {entry.time}
-                  {entry.skipReason
-                    ? ` · ${entry.skipReason}`
-                    : entry.condition
-                      ? ` · ${entry.condition}`
-                      : ""}
-                </p>
-              </div>
-              <div className="w-16 text-right">
-                <span
-                  className="text-xs font-medium"
-                  style={{
-                    color: entry.kg
-                      ? "var(--coffee-latte)"
-                      : "var(--text-muted)",
-                  }}
-                >
-                  {entry.kg ? `${entry.kg} kg` : "—"}
-                </span>
-              </div>
-              <div className="w-24 flex justify-center">
-                <StatusBadge variant={entry.status as BadgeVariant} />
-              </div>
-              <div className="w-14 text-right">
-                <button
-                  className="px-2 py-1 rounded text-[10px]"
-                  onClick={(e) => e.stopPropagation()}
+
+              {/* Expand panel */}
+              {expandedId === entry.id && (
+                <div
+                  className="px-4 py-3 flex flex-col gap-2"
                   style={{
                     background: "var(--bg-elevated)",
-                    color: "var(--text-muted)",
-                    border: "0.5px solid var(--border-subtle)",
+                    borderBottom: "0.5px solid var(--border-subtle)",
+                    borderTop: "0.5px solid var(--border-subtle)",
                   }}
                 >
-                  Detail
-                </button>
-              </div>
+                  <div className="flex gap-2">
+                    <span
+                      className="text-[10px] w-20 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Alamat
+                    </span>
+                    <span
+                      className="text-[10px]"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {entry.alamat ?? "—"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span
+                      className="text-[10px] w-20 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Tanggal
+                    </span>
+                    <span
+                      className="text-[10px]"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {entry.routeDate
+                        ? formatDisplayDate(entry.routeDate, { weekday: true })
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span
+                      className="text-[10px] w-20 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Kondisi
+                    </span>
+                    <span
+                      className="text-[10px]"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {entry.condition || "—"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span
+                      className="text-[10px] w-20 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      GPS
+                    </span>
+                    {entry.locationCoords ? (
+                      <a
+                        href={`https://maps.google.com/?q=${entry.locationCoords}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px]"
+                        style={{ color: "var(--coffee-latte)" }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {entry.locationCoords} ↗
+                      </a>
+                    ) : (
+                      <span
+                        className="text-[10px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Tidak tersedia
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <span
+                      className="text-[10px] w-20 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Catatan
+                    </span>
+                    <span
+                      className="text-[10px]"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {entry.notes || "Tidak ada catatan"}
+                    </span>
+                  </div>
+                  {entry.isSkipped && entry.skipReason && (
+                    <div className="flex gap-2">
+                      <span
+                        className="text-[10px] w-20 flex-shrink-0"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Alasan skip
+                      </span>
+                      <span
+                        className="text-[10px]"
+                        style={{ color: "var(--color-error)" }}
+                      >
+                        {entry.skipReason}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -3479,10 +4074,14 @@ export default function OperationalSection() {
   const [weekRoutes, setWeekRoutes] = useState<RouteWithCollector[]>([]);
   const [todayRoutes, setTodayRoutes] = useState<RouteWithCollector[]>([]);
   const [todayStops, setTodayStops] = useState<any[]>([]);
+  const [weekStops, setWeekStops] = useState<any[]>([]);
   const [teamStats, setTeamStats] = useState<any[]>([]);
 
   // ── Week navigation (ScheduleTab) ──────────────────────────────────────────
   const [weekOffset, setWeekOffset] = useState(0); // 0 = minggu ini, -1 = minggu lalu, +1 = minggu depan
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const weekStart = getMondayWITA(addDays(todayWITA(), weekOffset * 7));
   const weekEnd = addDays(weekStart, 6);
@@ -3500,6 +4099,20 @@ export default function OperationalSection() {
           : label;
   })();
 
+  function handleAcknowledge(collectorId: string) {
+    setAcknowledgedIds((prev) => {
+      const next = new Set(prev);
+      next.add(collectorId);
+      // Simpan ke sessionStorage agar survive tab switch
+      // (tapi reset saat refresh halaman — perilaku yang diinginkan)
+      sessionStorage.setItem(
+        "rebru_acknowledged_alerts",
+        JSON.stringify([...next]),
+      );
+      return next;
+    });
+  }
+
   const loadWeekRoutes = useCallback((start: string) => {
     fetchWeekRoutes(start)
       .then(setWeekRoutes)
@@ -3514,15 +4127,28 @@ export default function OperationalSection() {
   const onlineCount = todayRoutes.filter(
     (r) => r.stops_done > 0 || r.status === "active",
   ).length;
-  const alertCount = todayRoutes.filter((r) =>
-    r.stops.some(
-      (s) => s.status === "pending" && isTimeOverdue(s.scheduled_time),
-    ),
+  const alertCount = todayRoutes.filter(
+    (r) =>
+      r.stops.some(
+        (s) => s.status === "pending" && isTimeOverdue(s.scheduled_time),
+      ) && !acknowledgedIds.has(r.collector?.id ?? ""),
   ).length;
   const collectorNames = todayRoutes
     .slice(0, 2)
     .map((r) => r.collector?.name?.split(" ")[0] ?? "—")
     .join(" · ");
+
+  // Restore acknowledged alerts dari sessionStorage saat mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("rebru_acknowledged_alerts");
+      if (saved) {
+        setAcknowledgedIds(new Set(JSON.parse(saved)));
+      }
+    } catch {
+      // sessionStorage tidak tersedia — abaikan
+    }
+  }, []);
 
   // ── Fetch semua data saat mount ────────────────────────────────────────────
   useEffect(() => {
@@ -3540,7 +4166,8 @@ export default function OperationalSection() {
       safe(fetchTodayRoutes(), "fetchTodayRoutes", []),
       safe(fetchTodayStops(), "fetchTodayStops", []),
       safe(fetchCollectorStats(), "fetchCollectorStats", []),
-    ]).then(([w, t, s, stats]) => {
+      safe(fetchWeekStops(weekStart), "fetchWeekStops", []),
+    ]).then(([w, t, s, stats, ws]) => {
       setWeekRoutes(w as any);
       setTodayRoutes(t as any);
       setTodayStops(
@@ -3554,6 +4181,7 @@ export default function OperationalSection() {
         ),
       );
       setTeamStats(stats as any);
+      setWeekStops(ws as any);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3566,8 +4194,12 @@ export default function OperationalSection() {
   // ── Refresh Monitor + Log saat tab berubah ─────────────────────────────────
   useEffect(() => {
     if (activeTab !== "monitor" && activeTab !== "log") return;
-    Promise.all([fetchTodayRoutes(), fetchTodayStops()])
-      .then(([t, s]) => {
+    Promise.all([
+      fetchTodayRoutes(),
+      fetchTodayStops(),
+      fetchWeekStops(weekStart),
+    ])
+      .then(([t, s, ws]) => {
         setTodayRoutes(t);
         setTodayStops(
           (s as any[]).sort(
@@ -3577,6 +4209,7 @@ export default function OperationalSection() {
               (a.stop_order ?? 0) - (b.stop_order ?? 0),
           ),
         );
+        setWeekStops(ws as any);
       })
       .catch(console.error);
   }, [activeTab]);
@@ -3673,9 +4306,20 @@ export default function OperationalSection() {
           todayRoutes={todayRoutes}
         />
       )}
-      {activeTab === "monitor" && <MonitorTab todayRoutes={todayRoutes} />}
+      {activeTab === "monitor" && (
+        <MonitorTab
+          todayRoutes={todayRoutes}
+          acknowledgedIds={acknowledgedIds}
+          onAcknowledge={handleAcknowledge}
+        />
+      )}
+
       {activeTab === "log" && (
-        <LogTab stops={todayStops} totalScheduled={stopsTotal} />
+        <LogTab
+          stops={todayStops}
+          weekStops={weekStops}
+          totalScheduled={stopsTotal}
+        />
       )}
       {activeTab === "team" && (
         <TeamTab

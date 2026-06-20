@@ -5,7 +5,13 @@ import { type ReactNode } from "react";
 import { ThemeProvider } from "next-themes";
 import { AuthModalProvider } from "@/components/dashboard/AuthModalContext";
 import { ToastProvider } from "@/components/ui/Toast";
-import { CartProvider } from "@/context/CartContext"; // ← tambah import
+import { CartProvider } from "@/context/CartContext";
+import { useTimeTheme } from "@/hooks/useTimeTheme";
+
+function TimeThemeInitializer() {
+  useTimeTheme();
+  return null;
+}
 
 export default function Providers({ children }: { children: ReactNode }) {
   return (
@@ -15,6 +21,7 @@ export default function Providers({ children }: { children: ReactNode }) {
       enableSystem={false}
       disableTransitionOnChange
     >
+      <TimeThemeInitializer />
       <CartProvider>
         {" "}
         {/* ← wrap di sini */}

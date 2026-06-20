@@ -386,7 +386,14 @@ function MessageDetail({
 
 type FilterMode = "unread" | "all";
 
-export default function MessageSection() {
+export default function MessageSection({
+  onUnreadCount,
+}: {
+  // Callback ke AdminDashboard — dipanggil setiap kali jumlah unread berubah.
+  // AdminDashboard pakai ini untuk update badge nav secara instan
+  // tanpa menunggu polling interval berikutnya.
+  onUnreadCount?: (count: number) => void;
+}) {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -450,6 +457,11 @@ export default function MessageSection() {
       : messages;
 
   const unreadCount = messages.filter((m) => m.status === "unread").length;
+
+  // Kirim unreadCount ke AdminDashboard setiap kali messages berubah
+  useEffect(() => {
+    onUnreadCount?.(unreadCount);
+  }, [unreadCount, onUnreadCount]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {

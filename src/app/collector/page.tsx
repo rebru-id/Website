@@ -125,6 +125,10 @@ function LoadingState() {
 export default function CollectorPage() {
   const { session, openModal } = useAuthModal();
 
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [historyLogs, setHistoryLogs] = useState<WasteLog[]>([]);
   const [weeklyData, setWeeklyData] = useState<WeeklyBar[]>([]);
@@ -173,6 +177,21 @@ export default function CollectorPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+    }
+    function handleOffline() {
+      setIsOnline(false);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // ── Handler saat collector update stop ───────────────────────────────────
   const handleStopsChange = useCallback(
@@ -234,7 +253,32 @@ export default function CollectorPage() {
         collectedKg={collectedKg}
         stopsCompleted={stopsCompleted}
         totalStops={routeStops.length}
+        pendingStopsCount={
+          routeStops.filter((s) => s.status === "pending").length
+        }
       />
+
+      {/* Offline indicator banner */}
+      {!isOnline && (
+        <div
+          className="flex items-center justify-center gap-2 px-4 py-2"
+          style={{
+            background: "rgba(196,136,47,0.12)",
+            borderBottom: "1px solid rgba(196,136,47,0.3)",
+          }}
+        >
+          <i
+            className="fas fa-wifi text-[0.7rem]"
+            style={{ color: "var(--coffee-latte)" }}
+          />
+          <p
+            className="font-mono text-[0.68rem] tracking-[0.06em]"
+            style={{ color: "var(--coffee-latte)" }}
+          >
+            Tidak ada koneksi — data tidak akan tersimpan sampai online kembali
+          </p>
+        </div>
+      )}
 
       <main className="flex-1 max-w-[1280px] mx-auto w-full px-4 md:px-12 py-8">
         {/* Error banner */}

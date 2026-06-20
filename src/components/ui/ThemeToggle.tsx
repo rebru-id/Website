@@ -4,6 +4,7 @@
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { SunIcon, MoonIcon } from "@/assets/icons";
+import { markManualOverride } from "@/hooks/useTimeTheme";
 
 export default function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
@@ -24,7 +25,10 @@ export default function ThemeToggle() {
 
   return (
     <button
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={() => {
+        markManualOverride();
+        setTheme(isDark ? "light" : "dark");
+      }}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       title={isDark ? "Light mode" : "Dark mode"}
       className={`theme-toggle ${isDark ? "sun" : "moon"}`}

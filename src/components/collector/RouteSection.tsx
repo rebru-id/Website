@@ -827,6 +827,7 @@ interface RouteSectionProps {
   routeDate: string;
   initialStops: RouteStop[];
   onStopsChange?: (stops: RouteStop[]) => void;
+  onHeroAction?: (stopId: string) => void;
 }
 
 export default function RouteSection({
@@ -834,6 +835,7 @@ export default function RouteSection({
   routeDate,
   initialStops,
   onStopsChange,
+  onHeroAction,
 }: RouteSectionProps) {
   const [stops, setStops] = useState<RouteStop[]>(initialStops);
   const [activeStopId, setActiveStopId] = useState<string | null>(() => {
@@ -841,6 +843,7 @@ export default function RouteSection({
   });
 
   const doneStops = stops.filter((s) => s.status === "done");
+  const nextPendingStop = stops.find((s) => s.status === "pending") ?? null;
   const totalKg = doneStops.reduce((acc, s) => acc + (s.actual_kg ?? 0), 0);
   const progressPct =
     stops.length > 0
@@ -849,6 +852,16 @@ export default function RouteSection({
             100,
         )
       : 0;
+
+  function handleHeroClick(stopId: string) {
+    setActiveStopId(stopId);
+    onHeroAction?.(stopId);
+    // Scroll ke stop card yang bersangkutan setelah render
+    setTimeout(() => {
+      const el = document.getElementById(`stop-card-${stopId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  }
 
   function updateStops(updated: RouteStop[]) {
     setStops(updated);
@@ -1012,6 +1025,92 @@ export default function RouteSection({
         </div>
       </div>
 
+      {/* Hero Card — stop berikutnya yang harus dikerjakan */}
+      {nextPendingStop && (
+        <div
+          className="mb-5 rounded-lg overflow-hidden"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--coffee-latte)",
+          }}
+        >
+          {/* Label */}
+          <div
+            className="px-4 py-2 flex items-center justify-between"
+            style={{ background: "rgba(196,149,106,0.08)" }}
+          >
+            <span
+              className="font-mono text-[0.62rem] tracking-[0.12em] uppercase"
+              style={{ color: "var(--coffee-latte)" }}
+            >
+              Stop berikutnya
+            </span>
+            <span
+              className="font-mono text-[0.62rem] tracking-[0.1em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Stop {nextPendingStop.order} dari {stops.length}
+            </span>
+          </div>
+
+          {/* Konten */}
+          <div className="px-4 py-3">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[1rem] font-semibold text-text-primary truncate">
+                  {nextPendingStop.mitra_name}
+                </p>
+                <p className="text-[0.78rem] text-text-muted mt-0.5 truncate">
+                  {nextPendingStop.address}
+                </p>
+              </div>
+              <CategoryPill cat={nextPendingStop.mitra_category} />
+            </div>
+
+            {/* Info baris */}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex items-center gap-1.5">
+                <i
+                  className="fas fa-clock text-[0.65rem]"
+                  style={{ color: "var(--text-muted)" }}
+                />
+                <span
+                  className="font-mono text-[0.72rem]"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {nextPendingStop.scheduled_time || "—"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <i
+                  className="fas fa-weight-hanging text-[0.65rem]"
+                  style={{ color: "var(--text-muted)" }}
+                />
+                <span
+                  className="font-mono text-[0.72rem]"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  ~{nextPendingStop.estimated_kg} kg
+                </span>
+              </div>
+            </div>
+
+            {/* CTA */}
+            <button
+              onClick={() => handleHeroClick(nextPendingStop.id)}
+              className="w-full py-3 rounded-md text-[0.85rem] font-medium tracking-[0.03em] transition-all duration-200 hover:-translate-y-0.5"
+              style={{
+                background: "var(--coffee-latte)",
+                color: "var(--bg-primary)",
+                border: "none",
+              }}
+            >
+              Mulai Catat →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Route list */}
       <div>
         <p className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 flex items-center gap-2">
@@ -1028,15 +1127,16 @@ export default function RouteSection({
               .slice(idx + 1)
               .find((s) => s.status === "pending");
             return (
-              <RouteCard
-                key={stop.id}
-                stop={stop}
-                isActive={activeStopId === stop.id}
-                nextStop={nextPending ?? null}
-                onToggle={() => handleToggle(stop.id)}
-                onSubmit={(data) => handleSubmit(stop.id, data)}
-                onSkip={(reason) => handleSkip(stop.id, reason)}
-              />
+              <div key={stop.id} id={`stop-card-${stop.id}`}>
+                <RouteCard
+                  stop={stop}
+                  isActive={activeStopId === stop.id}
+                  nextStop={nextPending ?? null}
+                  onToggle={() => handleToggle(stop.id)}
+                  onSubmit={(data) => handleSubmit(stop.id, data)}
+                  onSkip={(reason) => handleSkip(stop.id, reason)}
+                />
+              </div>
             );
           })}
         </div>

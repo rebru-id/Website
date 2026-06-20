@@ -176,7 +176,7 @@ export async function fetchTodayRoutes(): Promise<RouteWithCollector[]> {
     .select(
       `
       id, collector_id, route_date, status, total_planned_kg,
-      collector_team (id, name, email, area, truck_plate, initials, status),
+      collector_team (id, name, email, phone, area, truck_plate, initials, status),
       collection_stops (
         id, stop_order, scheduled_time, estimated_kg, status,
         actual_kg, condition, skip_reason, completed_at, location_coords, notes,
@@ -189,6 +189,66 @@ export async function fetchTodayRoutes(): Promise<RouteWithCollector[]> {
 
   if (error) throw error;
   return (data ?? []).map(normalizeRoute);
+}
+
+/**
+ * LogTab — semua stops minggu ini (Senin–Minggu) lintas collector.
+ * Struktur return identik dengan fetchTodayStops agar LogTab tidak perlu tahu perbedaannya.
+ */
+export async function fetchWeekStops(
+  weekStart: string,
+): Promise<
+  (StopWithPartner & { collector_name: string; route_date: string })[]
+> {
+  const weekEnd = addDays(weekStart, 6);
+
+  const { data, error } = await supabase
+    .from("collection_routes")
+    .select(
+      `
+      route_date,
+      collector_team (name),
+      collection_stops (
+        id, route_id, partner_id, stop_order, scheduled_time,
+        estimated_kg, status, actual_kg, condition, skip_reason,
+        completed_at, location_coords, notes,
+        partner_applications (organization, jenis_usaha, alamat_detail, kecamatan_nama)
+      )
+    `,
+    )
+    .gte("route_date", weekStart)
+    .lte("route_date", weekEnd);
+
+  if (error) throw new Error(error.message ?? JSON.stringify(error));
+
+  const flat = (data ?? []).flatMap((r: any) =>
+    (r.collection_stops ?? []).map((s: any) => ({
+      id: s.id,
+      route_id: s.route_id,
+      partner_id: s.partner_id,
+      stop_order: s.stop_order,
+      scheduled_time: s.scheduled_time,
+      estimated_kg: s.estimated_kg,
+      status: s.status,
+      actual_kg: s.actual_kg,
+      condition: s.condition,
+      skip_reason: s.skip_reason,
+      completed_at: s.completed_at,
+      location_coords: s.location_coords,
+      photo_url: null,
+      notes: s.notes,
+      partner: s.partner_applications,
+      collector_name: r.collector_team?.name ?? "—",
+      route_date: r.route_date,
+    })),
+  );
+
+  return flat.sort(
+    (a, b) =>
+      (b.completed_at ?? "").localeCompare(a.completed_at ?? "") ||
+      (a.scheduled_time ?? "").localeCompare(b.scheduled_time ?? "") ||
+      (a.stop_order ?? 0) - (b.stop_order ?? 0),
+  );
 }
 
 /**
@@ -291,11 +351,6 @@ export async function fetchCollectorStats(): Promise<
     );
     throw mErr;
   }
-  console.log(
-    "[fetchCollectorStats] members fetched:",
-    members?.length ?? 0,
-    members,
-  );
 
   // Query routes dulu (filter tanggal di tabel induk) → stops di-embed
   // Ini adalah pendekatan yang benar: filter `.gte/.lte` hanya valid pada tabel utama query
@@ -434,7 +489,11 @@ export async function verifyStop(stopId: string): Promise<void> {
   // Verifikasi hanya mengubah status dari "done" ke "verified" jika diperlukan
   // Untuk sekarang, stop yang sudah "done" dianggap valid — tidak ada perubahan state.
   // Fungsi ini bisa diisi logic verifikasi lebih lanjut di Sprint 5.
-  console.log("Stop verified:", stopId);
+  const { error } = await supabase
+    .from("collection_stops")
+    .update({ status: "done" })
+    .eq("id", stopId);
+  if (error) throw new Error(error.message);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -486,14 +545,6 @@ export async function fetchMyTodayRoute(collectorEmail: string): Promise<{
 
   if (rErr) throw new Error(rErr.message ?? JSON.stringify(rErr));
   if (!route) return { route: null, collector: member as CollectorMember };
-
-  // Sort stops by stop_order di sisi client (PostgREST tidak support
-  // .order() pada embedded relationship)
-  if (Array.isArray(route.collection_stops)) {
-    (route as any).collection_stops = [...route.collection_stops].sort(
-      (a: any, b: any) => a.stop_order - b.stop_order,
-    );
-  }
 
   return {
     route: normalizeRoute({ ...route, collector_team: member }),
@@ -628,12 +679,17 @@ export async function fetchCollectorHistory(
 
 function normalizeRoute(raw: any): RouteWithCollector {
   const stops: StopWithPartner[] = (raw.collection_stops ?? [])
-    .sort((a: any, b: any) => a.stop_order - b.stop_order)
-    .map((s: any) => ({
+    .sort((a: any, b: any) => {
+      const tA = a.scheduled_time ?? "99:99";
+      const tB = b.scheduled_time ?? "99:99";
+      if (tA !== tB) return tA.localeCompare(tB);
+      return (a.stop_order ?? 0) - (b.stop_order ?? 0);
+    })
+    .map((s: any, idx: number) => ({
       id: s.id,
       route_id: raw.id,
       partner_id: s.partner_id,
-      stop_order: s.stop_order,
+      stop_order: idx + 1,
       scheduled_time: s.scheduled_time,
       estimated_kg: s.estimated_kg,
       status: s.status,
@@ -730,7 +786,6 @@ export async function fetchAllCollectors(): Promise<CollectorMember[]> {
     console.error("[fetchAllCollectors] error:", error.message, error);
     throw error;
   }
-  console.log("[fetchAllCollectors] fetched:", data?.length ?? 0, data);
   return (data ?? []) as CollectorMember[];
 }
 

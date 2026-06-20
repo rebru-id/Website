@@ -8,7 +8,7 @@
 //   2. Ganti <PlaceholderSection id="bio" /> dengan <BioConversionSection />
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/utils";
 import { useAuthModal } from "@/components/dashboard/AuthModalContext";
@@ -21,11 +21,21 @@ import OperationalSection from "@/components/dashboard/sections/OperationalSecti
 import BioConversionSection from "@/components/dashboard/sections/BioConversionSection";
 import EsgSection from "@/components/dashboard/sections/EsgSection";
 
+import { fetchTodayRoutes } from "@/lib/supabase-collector";
+import {
+  fetchPartnerApplications,
+  computePartnerBadge,
+} from "@/lib/supabase-partner";
+import OverviewSection from "@/components/dashboard/sections/OverviewSection";
+import { countUnreadMessages } from "@/lib/supabase-messages";
+import { createClient } from "@/lib/supabase/client";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 type SectionId =
+  | "overview"
   | "operasional"
   | "partner"
   | "products"
@@ -52,14 +62,16 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    label: "Overview",
+    items: [{ id: "overview", label: "Overview", icon: "fa-home" }],
+  },
+  {
     label: "Operasional",
     items: [
       {
         id: "operasional",
         label: "Operasional",
         icon: "fa-calendar-week",
-        badge: 2,
-        badgeColor: "red",
       },
     ],
   },
@@ -70,8 +82,6 @@ const NAV_GROUPS: NavGroup[] = [
         id: "partner",
         label: "Partner Management",
         icon: "fa-handshake",
-        badge: 5,
-        badgeColor: "amber",
       },
       { id: "products", label: "Produk & Penjualan", icon: "fa-box" },
       { id: "bio", label: "Bio Conversion", icon: "fa-flask" },
@@ -86,14 +96,13 @@ const NAV_GROUPS: NavGroup[] = [
         id: "pesan",
         label: "Pesan Masuk",
         icon: "fa-envelope",
-        badge: 3,
-        badgeColor: "red",
       },
     ],
   },
 ];
 
 const SECTION_TITLES: Record<SectionId, string> = {
+  overview: "Overview",
   operasional: "Operasional",
   partner: "Partner Management",
   products: "Produk & Penjualan",
@@ -220,11 +229,13 @@ function Sidebar({
   onSelect,
   name,
   onLogout,
+  badges,
 }: {
   active: SectionId;
   onSelect: (id: SectionId) => void;
   name: string;
   onLogout: () => void;
+  badges: Partial<Record<SectionId, number>>;
 }) {
   const initials = getInitials(name);
   return (
@@ -273,23 +284,23 @@ function Sidebar({
               >
                 <i className={cn("fas", item.icon)} />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.badge !== undefined && (
+                {(badges[item.id] ?? 0) > 0 && (
                   <span
                     className="text-[10px] font-medium px-1.5 py-px rounded-full leading-none"
                     style={{
                       background:
-                        item.badgeColor === "red"
-                          ? "rgba(160,72,72,0.15)"
-                          : "rgba(196,136,47,0.15)",
+                        item.id === "partner"
+                          ? "rgba(196,136,47,0.15)"
+                          : "rgba(160,72,72,0.15)",
                       color:
-                        item.badgeColor === "red"
-                          ? "var(--color-error)"
-                          : "var(--coffee-latte)",
-                      border: `0.5px solid ${item.badgeColor === "red" ? "rgba(160,72,72,0.4)" : "rgba(196,136,47,0.4)"}`,
+                        item.id === "partner"
+                          ? "var(--coffee-latte)"
+                          : "var(--color-error)",
+                      border: `0.5px solid ${item.id === "partner" ? "rgba(196,136,47,0.4)" : "rgba(160,72,72,0.4)"}`,
                       fontFamily: "var(--font-space-mono)",
                     }}
                   >
-                    {item.badge}
+                    {badges[item.id]}
                   </span>
                 )}
               </button>
@@ -436,13 +447,91 @@ function MobileGuard() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-  const { session, setSession } = useAuthModal();
+  const { session, setSession, sessionLoading } = useAuthModal();
   const router = useRouter();
-  const [active, setActive] = useState<SectionId>("operasional");
+  const [active, setActive] = useState<SectionId>("overview");
+  const [badgeOps, setBadgeOps] = useState(0);
+  const [badgePartner, setBadgePartner] = useState(0);
+  const [badgePesan, setBadgePesan] = useState(0);
+
+  const fetchBadges = useCallback(async () => {
+    try {
+      const supabase = createClient();
+
+      // Badge Operasional: jumlah collector status alert hari ini
+      const routes = await fetchTodayRoutes();
+      const alertCount = routes.filter((r: any) => {
+        const lastDone = [...(r.stops ?? [])]
+          .filter((s: any) => s.status !== "pending")
+          .sort((a: any, b: any) =>
+            (b.completed_at ?? "").localeCompare(a.completed_at ?? ""),
+          )[0];
+        const minsAgo = lastDone?.completed_at
+          ? Math.floor(
+              (Date.now() - new Date(lastDone.completed_at).getTime()) / 60_000,
+            )
+          : r.stops_done === 0
+            ? 999
+            : 0;
+        const overdueStops = (r.stops ?? []).filter(
+          (s: any) =>
+            s.status === "pending" &&
+            s.scheduled_time &&
+            s.scheduled_time < new Date().toTimeString().slice(0, 5),
+        );
+        return overdueStops.length > 0 && minsAgo > 75;
+      }).length;
+      setBadgeOps(alertCount);
+
+      // Badge Partner: pending + expiring ≤3 hari
+      const partners = await fetchPartnerApplications();
+      setBadgePartner(computePartnerBadge(partners));
+
+      // Badge Pesan: pakai countUnreadMessages() dari supabase-messages
+      // — sumber tunggal, tidak ada duplikasi query inline
+      const unreadCount = await countUnreadMessages();
+      setBadgePesan(unreadCount);
+    } catch (err) {
+      console.error("fetchBadges gagal:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBadges();
+    const interval = setInterval(fetchBadges, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchBadges]);
 
   function handleLogout() {
     setSession(null);
     router.replace("/");
+  }
+
+  // ── Session guard — tiga kondisi ──────────────────────────────────────────
+  // 1. sessionLoading = true  → getSession() belum selesai → tampilkan skeleton
+  //    (mencegah flash kosong dan adminName jatuh ke "Admin" literal)
+  // 2. session null setelah loading → memang tidak login → return null
+  // 3. role bukan admin → salah role → return null
+  if (sessionLoading) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "var(--bg-primary)" }}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <i
+            className="fas fa-circle-notch fa-spin text-xl"
+            style={{ color: "var(--text-muted)" }}
+          />
+          <p
+            className="font-mono text-[0.65rem] tracking-[0.12em] uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Memuat sesi...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (!session || session.role !== "admin") return null;
@@ -463,11 +552,22 @@ export default function AdminDashboard() {
           onSelect={setActive}
           name={session.name}
           onLogout={handleLogout}
+          badges={{
+            operasional: badgeOps,
+            partner: badgePartner,
+            pesan: badgePesan,
+          }}
         />
         <div className="dash-content-area">
           <Topbar active={active} />
           <main className="dash-scroll">
             <div className="dash-panel">
+              {active === "overview" && (
+                <OverviewSection
+                  onNavigate={(s) => setActive(s as SectionId)}
+                  adminName={session?.name ?? "Admin"}
+                />
+              )}
               {active === "operasional" && <OperationalSection />}
               {active === "partner" && <PartnerSection />}
               {active === "products" && <ProductsSection />}
@@ -475,7 +575,11 @@ export default function AdminDashboard() {
               {active === "bio" && <BioConversionSection />} {/* ← FASE 8 */}
               {active === "esg" && <EsgSection />}
               {active === "blog" && <BlogManagementTab />}
-              {active === "pesan" && <MessageSection />}
+              {active === "pesan" && (
+                <MessageSection
+                  onUnreadCount={(count) => setBadgePesan(count)}
+                />
+              )}
             </div>
           </main>
         </div>

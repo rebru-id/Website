@@ -51,6 +51,9 @@ interface AuthModalContextValue {
   session: SessionState | null;
   setSession: (s: SessionState | null) => void;
   logout: () => Promise<void>;
+  // true selama getSession() belum resolve — mencegah race condition
+  // di AdminDashboard antara "belum dicek" vs "memang tidak login"
+  sessionLoading: boolean;
 }
 
 export interface SessionState {
@@ -83,6 +86,11 @@ const AuthModalContext = createContext<AuthModalContextValue | null>(null);
 export function AuthModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [session, setSessionState] = useState<SessionState | null>(null);
+  // true dari mount sampai getSession() selesai
+  // Mock mode: langsung false karena tidak ada async restore
+  const [sessionLoading, setSessionLoading] = useState(
+    AUTH_MODE === "supabase",
+  );
 
   const openModal = useCallback(() => setIsOpen(true), []);
   const closeModal = useCallback(() => setIsOpen(false), []);
@@ -102,7 +110,10 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
 
         // Jika roles kosong: jangan set session — hindari role=undefined
         // yang menyebabkan TABS_BY_ROLE[undefined] crash di DashboardOverlay
-        if (roles.length === 0) return;
+        if (roles.length === 0) {
+          setSessionLoading(false);
+          return;
+        }
 
         setSessionState({
           name: (meta.name as string) || s.user.email || "",
@@ -110,6 +121,9 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
           email: s.user.email ?? "",
         });
       }
+      // Selalu set false setelah getSession() selesai —
+      // baik session ada maupun tidak ada
+      setSessionLoading(false);
     });
 
     // (b) Listener untuk semua perubahan auth state setelahnya
@@ -156,7 +170,15 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthModalContext.Provider
-      value={{ isOpen, openModal, closeModal, session, setSession, logout }}
+      value={{
+        isOpen,
+        openModal,
+        closeModal,
+        session,
+        setSession,
+        logout,
+        sessionLoading,
+      }}
     >
       {children}
     </AuthModalContext.Provider>
