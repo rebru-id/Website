@@ -1,30 +1,25 @@
 "use client";
 // src/components/collector/HistorySection.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// FIXED — Bar chart scaling:
+// Perubahan dari versi sebelumnya:
 //
-// Sebelumnya: bar height = nilai kg sebagai pixel (height: `${bar.kg}px`)
-// → 85 kg akan meluap keluar container, 3 kg hampir tidak terlihat
-//
-// Sekarang: bar height dihitung relatif terhadap nilai tertinggi di minggu ini
-// → height = (bar.kg / maxKg) * CHART_HEIGHT_PX
-// → semua bar proporsional, bar tertinggi selalu menyentuh batas atas container
+//   REC 5 — Tambah prop `isLoading`
+//     Karena history sekarang di-fetch independen dari rute, HistorySection
+//     perlu tahu kapan datanya masih dimuat. Saat isLoading=true, tampilkan
+//     skeleton placeholder agar tidak terlihat kosong secara tiba-tiba.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from "react";
 import { cn } from "@/utils";
 import type { WasteLog, WeeklyBar, MitraCategory } from "@/types/collector";
 
-// Tinggi container chart dalam pixel — konsisten dengan Tailwind h-14 (56px)
 const CHART_HEIGHT_PX = 56;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Weekly Bar Chart — FIXED scaling
+// Weekly Bar Chart
 // ─────────────────────────────────────────────────────────────────────────────
 
 function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
-  // FIXED: hitung max untuk scaling relatif
-  // Math.max(..., 1) mencegah division by zero jika semua bar = 0
   const maxKg = Math.max(...data.map((d) => d.kg), 1);
 
   return (
@@ -33,13 +28,11 @@ function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
         Total kg per hari — 7 hari terakhir
       </p>
 
-      {/* Container dengan tinggi tetap agar bar tidak meluap */}
       <div
         className="flex items-end gap-1.5"
         style={{ height: `${CHART_HEIGHT_PX}px` }}
       >
-        {data.map((bar) => {
-          // FIXED: tinggi proporsional terhadap nilai maksimum
+        {data.map((bar, idx) => {
           const heightPx =
             bar.kg > 0
               ? Math.max(Math.round((bar.kg / maxKg) * CHART_HEIGHT_PX), 3)
@@ -47,11 +40,10 @@ function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
 
           return (
             <div
-              key={bar.day}
+              key={idx}
               className="flex flex-col items-center justify-end flex-1"
               style={{ height: "100%" }}
             >
-              {/* Nilai kg — tampil di atas bar jika ada */}
               {bar.kg > 0 && (
                 <span
                   className="font-mono text-[0.58rem] text-text-muted mb-0.5"
@@ -60,7 +52,6 @@ function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
                   {bar.kg % 1 === 0 ? bar.kg.toFixed(0) : bar.kg.toFixed(1)}
                 </span>
               )}
-              {/* Bar */}
               <div
                 className="w-full rounded-t-[2px] transition-all duration-500"
                 style={{
@@ -75,10 +66,9 @@ function WeeklyBarChart({ data }: { data: WeeklyBar[] }) {
         })}
       </div>
 
-      {/* Day labels */}
       <div className="flex gap-1.5 mt-1">
-        {data.map((bar) => (
-          <div key={bar.day} className="flex-1 text-center">
+        {data.map((bar, idx) => (
+          <div key={idx} className="flex-1 text-center">
             <span
               className={cn(
                 "font-mono text-[0.58rem]",
@@ -127,7 +117,7 @@ function CategoryPill({ cat }: { cat: MitraCategory }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Status badge untuk log riwayat
+// Status badge
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LogStatusBadge({ status }: { status: WasteLog["status"] }) {
@@ -163,7 +153,7 @@ function LogStatusBadge({ status }: { status: WasteLog["status"] }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Log entry — collapsible untuk detail
+// Log entry — collapsible
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LogEntry({ log }: { log: WasteLog }) {
@@ -182,7 +172,6 @@ function LogEntry({ log }: { log: WasteLog }) {
         className="w-full flex items-center gap-3 px-3 py-3 text-left hover:bg-[rgba(255,255,255,0.02)] transition-colors"
         aria-expanded={expanded}
       >
-        {/* Qty */}
         <div className="shrink-0 text-right w-12">
           <span
             className="font-mono text-[0.95rem] font-semibold"
@@ -202,7 +191,6 @@ function LogEntry({ log }: { log: WasteLog }) {
           )}
         </div>
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <p className="text-[0.82rem] font-medium text-text-primary truncate">
             {log.mitra_name}
@@ -221,7 +209,6 @@ function LogEntry({ log }: { log: WasteLog }) {
           </div>
         </div>
 
-        {/* Status + chevron */}
         <div className="flex items-center gap-2 shrink-0">
           <LogStatusBadge status={log.status} />
           <span
@@ -236,11 +223,10 @@ function LogEntry({ log }: { log: WasteLog }) {
         </div>
       </button>
 
-      {/* Detail */}
       {expanded && (
         <div
-          className="px-3 pb-3 pt-2 border-t grid grid-cols-2 gap-x-4 gap-y-2"
-          style={{ borderColor: "var(--border-subtle)" }}
+          className="px-3 pb-3 grid grid-cols-2 gap-x-4 gap-y-3"
+          style={{ borderTop: "1px solid var(--border-subtle)" }}
         >
           {log.status !== "skipped" && (
             <>
@@ -257,12 +243,9 @@ function LogEntry({ log }: { log: WasteLog }) {
               {log.location_coords && (
                 <div>
                   <p className="font-mono text-[0.58rem] tracking-[0.1em] uppercase text-text-muted">
-                    Lokasi
+                    Koordinat
                   </p>
-                  <p
-                    className="font-mono text-[0.72rem] mt-0.5"
-                    style={{ color: "var(--forest-sage)" }}
-                  >
+                  <p className="font-mono text-[0.72rem] text-text-secondary mt-0.5">
                     {log.location_coords}
                   </p>
                 </div>
@@ -304,21 +287,83 @@ function LogEntry({ log }: { log: WasteLog }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Loading skeleton — ditampilkan saat isLoading=true (REC 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function HistorySkeleton() {
+  return (
+    <div
+      className="rounded-md border overflow-hidden animate-pulse"
+      style={{
+        background: "var(--bg-card)",
+        borderColor: "var(--border-subtle)",
+      }}
+    >
+      <div
+        className="px-4 py-3.5 border-b flex items-center gap-3"
+        style={{ borderColor: "var(--border-subtle)" }}
+      >
+        <div
+          className="w-7 h-7 rounded-md shrink-0"
+          style={{ background: "var(--bg-elevated)" }}
+        />
+        <div className="flex-1">
+          <div
+            className="h-3 rounded-full w-32 mb-2"
+            style={{ background: "var(--bg-elevated)" }}
+          />
+          <div
+            className="h-2.5 rounded-full w-24"
+            style={{ background: "var(--bg-elevated)" }}
+          />
+        </div>
+      </div>
+      <div className="px-4 py-4">
+        {/* Chart skeleton */}
+        <div
+          className="flex items-end gap-1.5 mb-4"
+          style={{ height: `${CHART_HEIGHT_PX}px` }}
+        >
+          {[40, 65, 30, 80, 50, 70, 100].map((h, i) => (
+            <div
+              key={i}
+              className="flex-1 rounded-t-[2px]"
+              style={{
+                height: `${h * 0.56}px`,
+                background: "var(--bg-elevated)",
+              }}
+            />
+          ))}
+        </div>
+        {/* Log skeleton rows */}
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="h-[52px] rounded-md mb-1.5"
+            style={{ background: "var(--bg-elevated)" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HistorySection — main export
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface HistorySectionProps {
   weeklyData: WeeklyBar[];
   historyLogs: WasteLog[];
+  /** REC 5: true saat fetch history masih berjalan (independen dari rute) */
+  isLoading?: boolean;
 }
 
 export default function HistorySection({
   weeklyData,
   historyLogs,
+  isLoading = false,
 }: HistorySectionProps) {
-  // Panel state persisted ke localStorage — lazy initializer tidak bisa
-  // dipakai langsung (localStorage tidak tersedia saat SSR), sehingga
-  // default true lalu dikoreksi oleh useEffect di bawah.
   const [panelOpen, setPanelOpen] = useState(true);
   const [logsExpanded, setLogsExpanded] = useState(false);
 
@@ -346,6 +391,34 @@ export default function HistorySection({
   const verifiedCount = historyLogs.filter(
     (l) => l.status === "verified",
   ).length;
+
+  // REC 5 — tampilkan skeleton saat data masih dimuat
+  if (isLoading) {
+    return (
+      <div>
+        <div className="flex items-center gap-3 mb-5">
+          <div
+            className="w-6 h-6 rounded-full flex items-center justify-center text-[0.7rem] font-semibold shrink-0"
+            style={{
+              background: "var(--forest-sage)",
+              color: "var(--forest-dark)",
+            }}
+          >
+            2
+          </div>
+          <div>
+            <h2 className="font-display text-[1.15rem] text-text-primary font-semibold">
+              Riwayat pengambilan
+            </h2>
+            <p className="text-[0.78rem] text-text-muted mt-0.5">
+              Memuat data...
+            </p>
+          </div>
+        </div>
+        <HistorySkeleton />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -419,7 +492,7 @@ export default function HistorySection({
 
         {panelOpen && (
           <>
-            {/* Bar chart — FIXED scaling */}
+            {/* Bar chart */}
             <div
               className="px-4 py-4 border-b"
               style={{ borderColor: "var(--border-subtle)" }}
@@ -496,6 +569,12 @@ export default function HistorySection({
                 >
                   + {historyLogs.length - 3} log lainnya
                 </button>
+              )}
+
+              {historyLogs.length === 0 && (
+                <p className="text-[0.75rem] text-text-muted text-center py-4 italic">
+                  Belum ada riwayat pengambilan.
+                </p>
               )}
             </div>
           </>

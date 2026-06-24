@@ -1,12 +1,26 @@
 "use client";
 // src/app/collector/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Halaman khusus collector — route: /collector
-// Semua operasi tanggal menggunakan @/utils/dateUtils (WITA-aware)
+// Perubahan dari versi sebelumnya:
+//
+//   REC 5 — Pisahkan Promise.all menjadi dua fetch independen
+//     Sebelumnya: Promise.all([route, history]) → satu gagal = semua error
+//     Sekarang: route dan history di-fetch terpisah, masing-masing punya
+//     state error sendiri, agar kegagalan history tidak menghalangi akses rute.
+//
+//   REC 1 — Toast saat updateStopStatus gagal
+//     Sebelumnya: rollback state saja (silent failure, user tidak tahu)
+//     Sekarang: useToast().show() dipanggil dengan pesan error yang jelas.
+//
+//   REC 6 — Tab navigation untuk mobile
+//     Sebelumnya: RouteSection + HistorySection selalu stacked di mobile
+//     Sekarang: di bawah breakpoint lg, tampil sebagai dua tab terpisah.
+//     Di lg ke atas, layout 2 kolom tetap seperti semula.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuthModal } from "@/components/dashboard/AuthModalContext";
+import { useToast } from "@/components/ui/Toast";
 import CollectorNavbar from "@/components/collector/CollectorNavbar";
 import RouteSection from "@/components/collector/RouteSection";
 import HistorySection from "@/components/collector/HistorySection";
@@ -14,6 +28,7 @@ import {
   fetchMyTodayRoute,
   fetchCollectorHistory,
   updateStopStatus,
+  uploadStopPhoto,
   type StopUpdatePayload,
 } from "@/lib/supabase-collector";
 import {
@@ -21,7 +36,7 @@ import {
   toWasteLog,
   toWeeklyBars,
 } from "@/utils/collector-adapters";
-import { todayWITA, addDays, formatDate } from "@/utils/date";
+import { todayWITA } from "@/utils/date";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,11 +134,103 @@ function LoadingState() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// REC 6 — Mobile tab bar
+// Hanya muncul di bawah breakpoint lg (< 1024px).
+// Di atas lg, komponen ini tidak dirender (layout 2 kolom tetap aktif).
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ActiveTab = "route" | "history";
+
+function MobileTabBar({
+  active,
+  onChange,
+  pendingCount,
+  historyCount,
+}: {
+  active: ActiveTab;
+  onChange: (tab: ActiveTab) => void;
+  pendingCount: number;
+  historyCount: number;
+}) {
+  return (
+    <div
+      className="lg:hidden flex border-b mb-6"
+      style={{ borderColor: "var(--border-subtle)" }}
+    >
+      {/* Tab: Rute */}
+      <button
+        onClick={() => onChange("route")}
+        className="flex-1 flex items-center justify-center gap-2 py-3 text-[0.8rem] font-mono tracking-[0.06em] transition-colors duration-150 relative"
+        style={{
+          color:
+            active === "route" ? "var(--coffee-latte)" : "var(--text-muted)",
+        }}
+      >
+        <i className="fas fa-route text-[0.7rem]" />
+        Rute Hari Ini
+        {pendingCount > 0 && (
+          <span
+            className="text-[0.62rem] px-1.5 py-0.5 rounded-pill font-semibold"
+            style={{
+              background: "rgba(196,149,106,0.15)",
+              color: "var(--coffee-latte)",
+              border: "1px solid rgba(196,149,106,0.25)",
+            }}
+          >
+            {pendingCount}
+          </span>
+        )}
+        {/* Active indicator */}
+        {active === "route" && (
+          <span
+            className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full"
+            style={{ background: "var(--coffee-latte)" }}
+          />
+        )}
+      </button>
+
+      {/* Tab: Riwayat */}
+      <button
+        onClick={() => onChange("history")}
+        className="flex-1 flex items-center justify-center gap-2 py-3 text-[0.8rem] font-mono tracking-[0.06em] transition-colors duration-150 relative"
+        style={{
+          color:
+            active === "history" ? "var(--forest-sage)" : "var(--text-muted)",
+        }}
+      >
+        <i className="fas fa-chart-bar text-[0.7rem]" />
+        Riwayat
+        {historyCount > 0 && (
+          <span
+            className="text-[0.62rem] px-1.5 py-0.5 rounded-pill font-semibold"
+            style={{
+              background: "rgba(122,171,126,0.1)",
+              color: "var(--forest-sage)",
+              border: "1px solid rgba(122,171,126,0.2)",
+            }}
+          >
+            {historyCount}
+          </span>
+        )}
+        {active === "history" && (
+          <span
+            className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full"
+            style={{ background: "var(--forest-sage)" }}
+          />
+        )}
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CollectorPage() {
   const { session, openModal } = useAuthModal();
+  // REC 1 — toast untuk feedback error saat save gagal
+  const { show: showToast } = useToast();
 
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
@@ -132,51 +239,66 @@ export default function CollectorPage() {
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [historyLogs, setHistoryLogs] = useState<WasteLog[]>([]);
   const [weeklyData, setWeeklyData] = useState<WeeklyBar[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
 
-  // ── Fetch data live dari Supabase ─────────────────────────────────────────
-  const loadData = useCallback(async () => {
+  // REC 5 — state loading dan error terpisah per sumber data
+  const [routeLoading, setRouteLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  // REC 6 — state tab aktif untuk mobile
+  const [activeTab, setActiveTab] = useState<ActiveTab>("route");
+
+  // ── REC 5: Fetch rute — independen dari history ───────────────────────────
+  const loadRoute = useCallback(async () => {
     if (!session?.email) return;
-    setLoading(true);
-    setError(null);
-
+    setRouteLoading(true);
+    setRouteError(null);
     try {
-      // todayWITA() mengembalikan tanggal hari ini dalam WITA (bukan UTC)
-      // Menggantikan: new Date().toISOString().split("T")[0]
       const today = todayWITA();
-
-      const [routeResult, historyRaw] = await Promise.all([
-        fetchMyTodayRoute(session.email),
-        fetchCollectorHistory(session.email),
-      ]);
-
+      const routeResult = await fetchMyTodayRoute(session.email);
       const stops = (routeResult.route?.stops ?? []).map(toRouteStop);
-      const logs = historyRaw.map(toWasteLog);
-
-      // WeeklyBar: kelompokkan per hari dari history
-      const routesByDay = groupHistoryByDay(historyRaw, today);
-      const bars = toWeeklyBars(routesByDay, today);
-
       setRouteId(routeResult.route?.id ?? null);
       setRouteStops(stops);
+    } catch (err: any) {
+      const msg = err?.message ?? err?.error_description ?? JSON.stringify(err);
+      console.error("CollectorPage: gagal memuat rute:", msg);
+      setRouteError(
+        `Gagal memuat rute: ${msg || "Periksa koneksi dan coba refresh."}`,
+      );
+    } finally {
+      setRouteLoading(false);
+    }
+  }, [session?.email]);
+
+  // ── REC 5: Fetch history — independen dari rute ───────────────────────────
+  const loadHistory = useCallback(async () => {
+    if (!session?.email) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const today = todayWITA();
+      const historyRaw = await fetchCollectorHistory(session.email);
+      const logs = historyRaw.map(toWasteLog);
+      const routesByDay = groupHistoryByDay(historyRaw, today);
+      const bars = toWeeklyBars(routesByDay, today);
       setHistoryLogs(logs);
       setWeeklyData(bars.length > 0 ? bars : DEFAULT_WEEKLY_BARS);
     } catch (err: any) {
       const msg = err?.message ?? err?.error_description ?? JSON.stringify(err);
-      console.error("CollectorPage: gagal memuat data:", msg, err);
-      setError(
-        `Gagal memuat rute: ${msg || "Periksa koneksi dan coba refresh."}`,
-      );
+      console.error("CollectorPage: gagal memuat history:", msg);
+      setHistoryError("Gagal memuat riwayat. Data rute tetap tersedia.");
     } finally {
-      setLoading(false);
+      setHistoryLoading(false);
     }
   }, [session?.email]);
 
+  // Jalankan keduanya saat mount — tidak saling tunggu
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadRoute();
+    loadHistory();
+  }, [loadRoute, loadHistory]);
 
   useEffect(() => {
     function handleOnline() {
@@ -193,55 +315,66 @@ export default function CollectorPage() {
     };
   }, []);
 
-  // ── Handler saat collector update stop ───────────────────────────────────
-  const handleStopsChange = useCallback(
-    async (updatedStops: RouteStop[]) => {
-      setRouteStops(updatedStops);
-
-      // FIX #1: deteksi berdasarkan ID, bukan index array
-      // Index-based comparison bisa salah jika ada reorder atau race condition
-      const prevById = Object.fromEntries(routeStops.map((s) => [s.id, s]));
-      const justCompleted = updatedStops.find(
-        (s) => s.status !== "pending" && prevById[s.id]?.status === "pending",
+  // ── DB commit handler — dipanggil RouteSection setelah undo window 10d habis ──
+  // Fix #9: menerima tepat SATU RouteStop yang baru di-commit (bukan seluruh array).
+  // Ini menghindari ambiguitas saat beberapa stop sudah done sebelumnya.
+  const handleCommitStop = useCallback(
+    async (committed: RouteStop) => {
+      // Sync stop ini ke state page agar navbar stats tetap akurat
+      setRouteStops((prev) =>
+        prev.map((s) => (s.id === committed.id ? committed : s)),
       );
 
-      if (!justCompleted) return;
+      // Upload foto ke Supabase Storage jika ada.
+      // Dilakukan SEBELUM updateStopStatus agar photo_url tersedia di payload.
+      let photoUrl: string | undefined;
+      if (committed.status === "done" && committed.photo_file) {
+        try {
+          photoUrl = await uploadStopPhoto(committed.photo_file, committed.id);
+        } catch (uploadErr) {
+          // Upload gagal tidak memblock submit — stop tetap tersimpan tanpa foto
+          console.warn("[handleCommitStop] upload foto gagal:", uploadErr);
+        }
+      }
 
-      // FIX #3: sertakan location_accuracy dalam payload
       const payload: StopUpdatePayload = {
-        status: justCompleted.status as "done" | "skipped",
-        actual_kg: justCompleted.actual_kg,
-        condition: justCompleted.condition as StopUpdatePayload["condition"],
-        skip_reason: justCompleted.skip_reason,
-        location_coords: justCompleted.location_coords,
-        location_accuracy: justCompleted.location_accuracy, // ← sebelumnya hilang
-        notes: justCompleted.notes,
+        status: committed.status as "done" | "skipped",
+        actual_kg: committed.actual_kg,
+        condition: committed.condition as StopUpdatePayload["condition"],
+        skip_reason: committed.skip_reason,
+        location_coords: committed.location_coords,
+        location_accuracy: committed.location_accuracy,
+        notes: committed.notes,
+        photo_url: photoUrl,
       };
 
       try {
-        await updateStopStatus(justCompleted.id, payload);
-      } catch (err) {
+        await updateStopStatus(committed.id, payload);
+      } catch (err: any) {
         console.error("Gagal menyimpan status stop:", err);
-        // Rollback ke state sebelumnya jika DB update gagal
-        setRouteStops(routeStops);
+        // REC 1 — toast error; undo window sudah expired, tidak bisa rollback UI
+        showToast("Gagal menyimpan ke server. Coba refresh halaman.", "error");
       }
     },
-    [routeStops],
+    [showToast],
   );
 
-  // ── Auth guards ────────────────────────────────────────────────────────────
+  // ── Auth guards ───────────────────────────────────────────────────────────
   if (!session) return <NotLoggedIn onLogin={openModal} />;
   if (session.role !== "collector") return <AccessDenied />;
-  if (loading) return <LoadingState />;
 
-  // ── Stats untuk navbar ─────────────────────────────────────────────────────
+  // Hanya blok loading jika rute belum selesai dimuat
+  // History boleh masih loading — HistorySection tangani sendiri
+  if (routeLoading) return <LoadingState />;
+
+  // ── Stats untuk navbar ────────────────────────────────────────────────────
   const collectedKg = routeStops
     .filter((s) => s.status === "done")
     .reduce((acc, s) => acc + (s.actual_kg ?? 0), 0);
-
   const stopsCompleted = routeStops.filter(
     (s) => s.status !== "pending",
   ).length;
+  const pendingCount = routeStops.filter((s) => s.status === "pending").length;
 
   return (
     <div
@@ -253,9 +386,7 @@ export default function CollectorPage() {
         collectedKg={collectedKg}
         stopsCompleted={stopsCompleted}
         totalStops={routeStops.length}
-        pendingStopsCount={
-          routeStops.filter((s) => s.status === "pending").length
-        }
+        pendingStopsCount={pendingCount}
       />
 
       {/* Offline indicator banner */}
@@ -281,8 +412,8 @@ export default function CollectorPage() {
       )}
 
       <main className="flex-1 max-w-[1280px] mx-auto w-full px-4 md:px-12 py-8">
-        {/* Error banner */}
-        {error && (
+        {/* Error banner — rute */}
+        {routeError && (
           <div
             className="mb-6 px-4 py-3 rounded-lg flex items-center gap-3"
             style={{
@@ -298,10 +429,10 @@ export default function CollectorPage() {
               className="text-sm flex-1"
               style={{ color: "var(--color-error)" }}
             >
-              {error}
+              {routeError}
             </p>
             <button
-              onClick={loadData}
+              onClick={loadRoute}
               className="text-sm underline"
               style={{ color: "var(--color-error)" }}
             >
@@ -310,8 +441,37 @@ export default function CollectorPage() {
           </div>
         )}
 
+        {/* REC 5 — error banner history terpisah, tidak memblok rute */}
+        {historyError && (
+          <div
+            className="mb-6 px-4 py-3 rounded-lg flex items-center gap-3"
+            style={{
+              background: "rgba(196,136,47,0.08)",
+              border: "1px solid rgba(196,136,47,0.2)",
+            }}
+          >
+            <i
+              className="fas fa-exclamation-circle text-sm"
+              style={{ color: "var(--coffee-latte)" }}
+            />
+            <p
+              className="text-sm flex-1"
+              style={{ color: "var(--coffee-latte)" }}
+            >
+              {historyError}
+            </p>
+            <button
+              onClick={loadHistory}
+              className="text-sm underline"
+              style={{ color: "var(--coffee-latte)" }}
+            >
+              Coba lagi
+            </button>
+          </div>
+        )}
+
         {/* Empty state jika tidak ada rute hari ini */}
-        {!loading && routeStops.length === 0 && !error && (
+        {!routeLoading && routeStops.length === 0 && !routeError && (
           <div
             className="mb-8 px-6 py-8 rounded-lg text-center"
             style={{
@@ -333,7 +493,7 @@ export default function CollectorPage() {
         )}
 
         {/* Page header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="font-display text-fluid-title text-text-primary font-semibold">
             Log <em className="text-coffee-latte not-italic">pengambilan</em>{" "}
             ampas kopi
@@ -344,7 +504,7 @@ export default function CollectorPage() {
               day: "numeric",
               month: "long",
               year: "numeric",
-              timeZone: "Asia/Makassar", // ← eksplisit WITA untuk display saja
+              timeZone: "Asia/Makassar",
             })}{" "}
             · Rute ditetapkan admin ·{" "}
             <span style={{ color: "var(--forest-sage)" }}>
@@ -353,17 +513,39 @@ export default function CollectorPage() {
           </p>
         </div>
 
-        {/* 2-kolom desktop, stacked mobile */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8 items-start">
-          <RouteSection
-            collectorName={session.name}
-            routeDate={todayWITA()}
-            initialStops={routeStops}
-            onStopsChange={handleStopsChange}
-          />
+        {/* REC 6 — Tab bar, hanya tampil di mobile (< lg) */}
+        <MobileTabBar
+          active={activeTab}
+          onChange={setActiveTab}
+          pendingCount={pendingCount}
+          historyCount={historyLogs.length}
+        />
 
-          <div className="lg:sticky lg:top-[72px]">
-            <HistorySection weeklyData={weeklyData} historyLogs={historyLogs} />
+        {/*
+          Layout:
+          - Mobile: satu panel aktif sesuai tab
+          - Desktop (lg+): 2 kolom side-by-side, tab bar hidden
+        */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8 items-start">
+          {/* Panel Rute — di mobile hanya tampil saat tab "route" aktif */}
+          <div className={activeTab === "route" ? "block" : "hidden lg:block"}>
+            <RouteSection
+              collectorName={session.name}
+              routeDate={todayWITA()}
+              initialStops={routeStops}
+              onCommitStop={handleCommitStop}
+            />
+          </div>
+
+          {/* Panel History — di mobile hanya tampil saat tab "history" aktif */}
+          <div
+            className={`lg:sticky lg:top-[72px] ${activeTab === "history" ? "block" : "hidden lg:block"}`}
+          >
+            <HistorySection
+              weeklyData={weeklyData}
+              historyLogs={historyLogs}
+              isLoading={historyLoading}
+            />
           </div>
         </div>
       </main>
@@ -375,9 +557,6 @@ export default function CollectorPage() {
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Kelompokkan history stops per hari → untuk WeeklyBar
-// Input: StopWithPartner[] dari fetchCollectorHistory (raw DB data)
-// Pakai .actual_kg (field StopWithPartner) — bukan .kg (field WasteLog UI type)
 function groupHistoryByDay(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   history: any[],
@@ -389,7 +568,6 @@ function groupHistoryByDay(
   history.forEach((h: any) => {
     const d = h.route_date ?? today;
     if (!byDay[d]) byDay[d] = { route_date: d, total_actual_kg: 0 };
-    // FIX #2: actual_kg (StopWithPartner DB field), bukan .kg (WasteLog UI field)
     byDay[d].total_actual_kg += h.actual_kg ?? 0;
   });
 

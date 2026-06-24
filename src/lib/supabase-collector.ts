@@ -108,6 +108,7 @@ export type StopUpdatePayload = {
   location_coords?: string;
   location_accuracy?: number;
   notes?: string;
+  photo_url?: string; // ← URL publik dari Supabase Storage (hasil uploadStopPhoto)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -602,6 +603,43 @@ export async function updateStopStatus(
         });
     }
   }
+}
+
+/**
+ * CollectorPage — upload foto dokumentasi stop ke Supabase Storage.
+ * Dipanggil di page.tsx SEBELUM updateStopStatus() agar photo_url
+ * sudah tersedia saat payload dikirim ke collection_stops.
+ *
+ * Bucket  : collector-photos (public, sudah dikonfigurasi)
+ * Path    : collection/{YYYY-MM-DD}/{stopId}.{ext}
+ * Return  : URL publik foto (string) yang langsung bisa disimpan ke photo_url
+ *
+ * Error handling:
+ *   - Jika upload gagal, fungsi throw error → page.tsx catch dan skip upload
+ *     tapi tetap simpan data stop tanpa foto (tidak block keseluruhan submit)
+ */
+export async function uploadStopPhoto(
+  file: File,
+  stopId: string,
+): Promise<string> {
+  const ext = file.name.split(".").pop() ?? "jpg";
+  const date = todayWITA(); // "YYYY-MM-DD" dalam WITA
+  const path = `collection/${date}/${stopId}.${ext}`;
+
+  const { error: uploadErr } = await supabase.storage
+    .from("collector-photos")
+    .upload(path, file, {
+      upsert: true, // replace jika foto untuk stop ini sudah ada
+      contentType: file.type,
+    });
+
+  if (uploadErr) {
+    throw new Error(`Upload foto gagal: ${uploadErr.message}`);
+  }
+
+  const { data } = supabase.storage.from("collector-photos").getPublicUrl(path);
+
+  return data.publicUrl;
 }
 
 /**

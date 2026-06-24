@@ -1,23 +1,26 @@
 "use client";
 // src/components/collector/RouteSection.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// FIXED — perubahan dari versi sebelumnya:
+// Perubahan dari versi sebelumnya:
 //
-//   1. isClickable logic (RouteCard):
-//      Sebelumnya: !isCompleted || stop.status === "done"
-//      → stop "done" tetap bisa diklik tapi tidak menampilkan apa-apa
-//      → collector bingung karena tidak ada visual feedback
+//   REC 3 — Timestamp di completed stops di route list
+//     Sebelumnya: completed_at hanya tampil di HistorySection
+//     Sekarang: juga tampil inline di RouteCard untuk stop "done",
+//     agar collector bisa lihat "selesai 09:32" langsung tanpa buka riwayat.
 //
-//      Sekarang: hanya stop "pending" yang bisa diklik untuk buka form
-//      → stop "done" dan "skipped" tidak bisa diklik (cursor: default)
-//      → jika collector tap stop done: tidak ada respons = tidak membingungkan
+//   REC 4 — Hero card + InlineForm dalam proximity
+//     Sebelumnya: "Mulai Catat →" di hero card membuka form di route list
+//     (bisa jauh di bawah layar → disorienting scroll).
+//     Sekarang: InlineForm dirender langsung di dalam hero card itu sendiri,
+//     sehingga form muncul tepat di bawah tombol yang ditekan.
+//     Route list tetap ada, tapi form hero tidak lagi di-scroll ke sana.
 //
-//   2. Satu form aktif sekaligus (sudah benar sebelumnya, dipertahankan):
-//      activeStopId mengontrol form mana yang terbuka.
-//      Menutup form aktif jika id yang sama diklik ulang.
-//
-//   3. Draft auto-save per stop.id (sudah benar, dipertahankan):
-//      Key: `rebru_draft_${stop.id}` — tidak ada tabrakan antar stop.
+//   REC 7 — Skip flow simplification
+//     Sebelumnya: tap "Lewati" → buka panel skip di dalam form (3 langkah)
+//     Sekarang: tap "Lewati" → bottom sheet kecil dengan 3 tombol besar
+//     langsung dapat dikonfirmasi dalam 1 tap tanpa membuka form penuh.
+//     "Lainnya" tetap ada dengan input teks.
+//     Quick skip bisa dipanggil dari hero card DAN dari route card langsung.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -74,8 +77,30 @@ function CategoryPill({ cat }: { cat: MitraCategory }) {
 function StatusBadge({ stop }: { stop: RouteStop }) {
   if (stop.status === "done") {
     return (
-      <span className="font-mono text-[0.62rem] tracking-[0.06em] px-2 py-0.5 rounded-pill border bg-[rgba(122,171,126,0.1)] text-forest-sage border-[rgba(122,171,126,0.25)]">
-        ✓ {stop.actual_kg?.toFixed(1)} kg
+      <span className="flex items-center gap-1.5">
+        <span className="font-mono text-[0.62rem] tracking-[0.06em] px-2 py-0.5 rounded-pill border bg-[rgba(122,171,126,0.1)] text-forest-sage border-[rgba(122,171,126,0.25)]">
+          ✓ {stop.actual_kg?.toFixed(1)} kg
+        </span>
+        {/* Fix #3 — indikator foto: hijau=ada foto, redup=belum ada */}
+        <span
+          className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+          title={stop.photo_preview ? "Ada foto dokumentasi" : "Belum ada foto"}
+          style={{
+            background: stop.photo_preview
+              ? "rgba(122,171,126,0.12)"
+              : "rgba(196,149,106,0.08)",
+            border: `1px solid ${stop.photo_preview ? "rgba(122,171,126,0.3)" : "rgba(196,149,106,0.2)"}`,
+          }}
+        >
+          <i
+            className={`fas fa-${stop.photo_preview ? "image" : "camera"} text-[0.52rem]`}
+            style={{
+              color: stop.photo_preview
+                ? "var(--forest-sage)"
+                : "var(--text-muted)",
+            }}
+          />
+        </span>
       </span>
     );
   }
@@ -153,7 +178,235 @@ function StopBullet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// InlineForm — muncul di bawah stop card yang aktif
+// REC 7 — QuickSkipSheet
+// Bottom sheet kecil dengan 3 tombol alasan utama + opsi "Lainnya".
+// Dirender sebagai overlay di dalam RouteSection (bukan modal global),
+// agar tidak ada layout shift pada konten di bawahnya.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface QuickSkipSheetProps {
+  stopName: string;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}
+
+function QuickSkipSheet({
+  stopName,
+  onConfirm,
+  onCancel,
+}: QuickSkipSheetProps) {
+  const [customReason, setCustomReason] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
+
+  // Alasan utama — 3 tombol besar, 1 tap langsung konfirmasi
+  const quickReasons = SKIP_REASONS.filter((r) => r !== "Lainnya");
+
+  return (
+    <div
+      className="mt-1 mb-2 rounded-md overflow-hidden"
+      style={{
+        background: "var(--bg-surface)",
+        border: "1px solid rgba(248,113,113,0.25)",
+        borderTop: "2px solid #f87171",
+      }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b"
+        style={{
+          background: "rgba(248,113,113,0.04)",
+          borderColor: "rgba(248,113,113,0.12)",
+        }}
+      >
+        <div>
+          <p className="text-[0.85rem] font-medium text-text-primary">
+            Lewati stop ini
+          </p>
+          <p className="text-[0.72rem] text-text-muted mt-0.5 truncate max-w-[220px]">
+            {stopName}
+          </p>
+        </div>
+        <button
+          onClick={onCancel}
+          className="w-7 h-7 rounded-full flex items-center justify-center transition-colors"
+          style={{
+            color: "var(--text-muted)",
+            border: "1px solid var(--border-subtle)",
+          }}
+          aria-label="Batal lewati"
+        >
+          <i className="fas fa-times text-[0.65rem]" />
+        </button>
+      </div>
+
+      <div className="p-4">
+        <p className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-3">
+          Pilih alasan
+        </p>
+
+        {/* Quick reason buttons — 1 tap langsung konfirmasi */}
+        <div className="flex flex-col gap-2 mb-3">
+          {quickReasons.map((reason) => (
+            <button
+              key={reason}
+              onClick={() => onConfirm(reason)}
+              className="w-full text-left px-4 py-3 rounded-md text-[0.82rem] font-medium border transition-all duration-150 hover:-translate-y-0.5"
+              style={{
+                background: "rgba(248,113,113,0.05)",
+                color: "#f87171",
+                borderColor: "rgba(248,113,113,0.2)",
+              }}
+            >
+              <i className="fas fa-times-circle mr-2 text-[0.75rem] opacity-70" />
+              {reason}
+            </button>
+          ))}
+        </div>
+
+        {/* Lainnya — expand input teks */}
+        {!showCustom ? (
+          <button
+            onClick={() => setShowCustom(true)}
+            className="w-full text-left px-4 py-2.5 rounded-md text-[0.78rem] border transition-colors"
+            style={{
+              color: "var(--text-muted)",
+              borderColor: "var(--border-subtle)",
+              background: "var(--bg-elevated)",
+            }}
+          >
+            Lainnya — tulis sendiri...
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              value={customReason}
+              onChange={(e) => setCustomReason(e.target.value)}
+              placeholder="Tuliskan alasan..."
+              className="flex-1 text-[0.82rem] px-3 py-2.5 rounded-md"
+              style={{
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border-default)",
+                color: "var(--text-primary)",
+                outline: "none",
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customReason.trim()) {
+                  onConfirm(customReason.trim());
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (customReason.trim()) onConfirm(customReason.trim());
+              }}
+              disabled={!customReason.trim()}
+              className="px-4 py-2.5 rounded-md text-[0.78rem] font-medium border transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                background: "rgba(248,113,113,0.08)",
+                color: "#f87171",
+                borderColor: "rgba(248,113,113,0.25)",
+              }}
+            >
+              Konfirmasi
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix #9 — UndoToast
+// Toast countdown 10 detik dengan tombol "Batalkan".
+// UI update terjadi segera; Supabase baru dipanggil setelah onConfirm.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface UndoToastProps {
+  message: string;
+  onUndo: () => void;
+  onConfirm: () => void;
+  durationMs?: number;
+}
+
+function UndoToast({
+  message,
+  onUndo,
+  onConfirm,
+  durationMs = 10000,
+}: UndoToastProps) {
+  const [remaining, setRemaining] = useState(Math.ceil(durationMs / 1000));
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const showTimer = setTimeout(() => setVisible(true), 10);
+    const interval = setInterval(() => {
+      setRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    const confirmTimer = setTimeout(() => {
+      onConfirm();
+    }, durationMs);
+    return () => {
+      clearTimeout(showTimer);
+      clearTimeout(confirmTimer);
+      clearInterval(interval);
+    };
+  }, [durationMs, onConfirm]);
+
+  const pct = (remaining / Math.ceil(durationMs / 1000)) * 100;
+
+  return (
+    <div
+      className="fixed bottom-6 left-1/2 z-[9998] w-full max-w-[360px] rounded-lg overflow-hidden shadow-xl transition-all duration-300"
+      style={{
+        transform: `translateX(-50%) translateY(${visible ? "0" : "20px"})`,
+        opacity: visible ? 1 : 0,
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border-default)",
+      }}
+    >
+      <div
+        className="h-[3px] transition-all"
+        style={{
+          width: `${pct}%`,
+          background: "var(--coffee-latte)",
+          transition: "width 1s linear",
+        }}
+      />
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-[0.82rem] font-medium text-text-primary truncate">
+            {message}
+          </p>
+          <p className="font-mono text-[0.65rem] text-text-muted mt-0.5">
+            Tersimpan dalam {remaining}d...
+          </p>
+        </div>
+        <button
+          onClick={onUndo}
+          className="shrink-0 font-mono text-[0.72rem] tracking-[0.06em] px-3 py-1.5 rounded-md border font-medium transition-all duration-150 hover:-translate-y-0.5"
+          style={{
+            background: "rgba(196,149,106,0.1)",
+            color: "var(--coffee-latte)",
+            borderColor: "rgba(196,149,106,0.3)",
+          }}
+        >
+          Batalkan
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// InlineForm — form input data stop
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface InlineFormProps {
@@ -168,19 +421,33 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     ...DEFAULT_FORM_DATA,
     qty: stop.estimated_kg,
   });
-  const [showSkip, setShowSkip] = useState(false);
-  const [skipReason, setSkipReason] = useState("");
-  const [customReason, setCustomReason] = useState("");
+  const [showSkipSheet, setShowSkipSheet] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
   const [errors, setErrors] = useState<
     Partial<Record<keyof StopFormData, string>>
   >({});
+  // Fix #2 — realtime validation setelah submit pertama
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [shakeField, setShakeField] = useState<string | null>(null);
+  // Fix #4 — GPS error state dengan pesan spesifik per jenis error
+  const [gpsError, setGpsError] = useState<{
+    type: "permission" | "timeout" | "unavailable";
+    msg: string;
+  } | null>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
+  // Fix #4 — captureGPS dengan error handling per jenis error
   const captureGPS = useCallback(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGpsError({
+        type: "unavailable",
+        msg: "GPS tidak tersedia di perangkat ini",
+      });
+      return;
+    }
     setLocLoading(true);
+    setGpsError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setForm((prev) => ({
@@ -188,9 +455,28 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
           locationCoords: `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`,
           locationAccuracy: Math.round(pos.coords.accuracy),
         }));
+        setGpsError(null);
         setLocLoading(false);
       },
-      () => setLocLoading(false),
+      (err) => {
+        setLocLoading(false);
+        if (err.code === 1) {
+          setGpsError({
+            type: "permission",
+            msg: "Izin lokasi ditolak — aktifkan di pengaturan HP",
+          });
+        } else if (err.code === 3) {
+          setGpsError({
+            type: "timeout",
+            msg: "Sinyal GPS lemah — coba di luar ruangan",
+          });
+        } else {
+          setGpsError({
+            type: "unavailable",
+            msg: "Lokasi tidak dapat dideteksi saat ini",
+          });
+        }
+      },
       { timeout: 8000, enableHighAccuracy: true },
     );
   }, []);
@@ -202,7 +488,6 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     }, 100);
   }, [captureGPS]);
 
-  // Draft auto-save — key per stop.id, tidak ada tabrakan antar stop
   useEffect(() => {
     const draft = {
       qty: form.qty,
@@ -212,7 +497,6 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     localStorage.setItem(`rebru_draft_${stop.id}`, JSON.stringify(draft));
   }, [form.qty, form.condition, form.notes, stop.id]);
 
-  // Draft restore
   useEffect(() => {
     const raw = localStorage.getItem(`rebru_draft_${stop.id}`);
     if (!raw) return;
@@ -242,25 +526,35 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     reader.readAsDataURL(file);
   }
 
-  function validate(): boolean {
+  // Fix #2 — validate bisa dipanggil kapan saja
+  function validate(silent = false): boolean {
     const errs: typeof errors = {};
     if (form.qty <= 0) errs.qty = "Kuantitas harus lebih dari 0";
     if (!form.condition) errs.condition = "Pilih kondisi ampas";
-    setErrors(errs);
+    if (!silent) setErrors(errs);
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit() {
-    if (!validate()) return;
-    localStorage.removeItem(`rebru_draft_${stop.id}`);
-    onSubmit(form);
+  // Fix #2 — realtime validation setelah hasAttemptedSubmit=true
+  useEffect(() => {
+    if (hasAttemptedSubmit) validate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.qty, form.condition, hasAttemptedSubmit]);
+
+  function triggerShake(field: string) {
+    setShakeField(field);
+    setTimeout(() => setShakeField(null), 500);
   }
 
-  function handleConfirmSkip() {
-    const reason = skipReason === "Lainnya" ? customReason.trim() : skipReason;
-    if (!reason) return;
+  function handleSubmit() {
+    setHasAttemptedSubmit(true);
+    if (!validate()) {
+      if (form.qty <= 0) triggerShake("qty");
+      else if (!form.condition) triggerShake("condition");
+      return;
+    }
     localStorage.removeItem(`rebru_draft_${stop.id}`);
-    onSkip(reason);
+    onSubmit(form);
   }
 
   const inputBase: React.CSSProperties = {
@@ -274,8 +568,10 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     outline: "none",
   };
 
-  const ctaLabel = nextStopName
-    ? `Simpan & Lanjut ke ${nextStopName.split(" ").slice(0, 3).join(" ")} →`
+  // Fix #7 — pakai nomor stop bukan nama mitra agar tidak overflow
+  const nextStopOrder = nextStopName ? stop.order + 1 : null;
+  const ctaLabel = nextStopOrder
+    ? `Simpan & Lanjut ke Stop ${nextStopOrder} →`
     : "Simpan & Selesaikan Rute ✓";
 
   return (
@@ -288,6 +584,18 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
         borderTop: "2px solid var(--coffee-latte)",
       }}
     >
+      {/* Fix #2 — keyframes shake untuk field validation */}
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          15% { transform: translateX(-5px); }
+          30% { transform: translateX(5px); }
+          45% { transform: translateX(-4px); }
+          60% { transform: translateX(4px); }
+          75% { transform: translateX(-2px); }
+          90% { transform: translateX(2px); }
+        }
+      `}</style>
       {/* Context banner */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b"
@@ -318,14 +626,20 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
       </div>
 
       <div className="p-4 flex flex-col gap-4">
-        {/* Row: Qty + Kondisi */}
+        {/* Qty + Kondisi */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Qty stepper */}
           <div>
             <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
               Kuantitas <span style={{ color: "var(--coffee-latte)" }}>*</span>
             </label>
-            <div className="flex items-center gap-2">
+            {/* Fix #2 — shake saat qty invalid setelah submit pertama */}
+            <div
+              className="flex items-center gap-2"
+              style={{
+                animation: shakeField === "qty" ? "shake 0.45s ease" : "none",
+              }}
+            >
               <button
                 onClick={() =>
                   setForm((p) => ({
@@ -389,7 +703,14 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
               Kondisi ampas{" "}
               <span style={{ color: "var(--coffee-latte)" }}>*</span>
             </label>
-            <div className="flex gap-2 h-9">
+            {/* Fix #2 — shake saat kondisi belum dipilih setelah submit pertama */}
+            <div
+              className="flex gap-2 h-9"
+              style={{
+                animation:
+                  shakeField === "condition" ? "shake 0.45s ease" : "none",
+              }}
+            >
               {(["basah", "kering", "mix"] as ConditionType[]).map((c) => (
                 <button
                   key={c}
@@ -490,7 +811,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
           )}
         </div>
 
-        {/* Lokasi otomatis */}
+        {/* Lokasi */}
         <div>
           <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
             Lokasi saat ini
@@ -502,14 +823,42 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
               border: "1px solid rgba(122,171,126,0.18)",
             }}
           >
+            {/* Fix #4 — ikon berubah sesuai state */}
             <i
-              className="fas fa-location-dot text-sm"
-              style={{ color: "var(--forest-sage)" }}
+              className={`fas fa-${locLoading ? "circle-notch fa-spin" : "location-dot"} text-sm shrink-0`}
+              style={{
+                color: locLoading
+                  ? "var(--text-muted)"
+                  : gpsError
+                    ? gpsError.type === "permission"
+                      ? "#f87171"
+                      : "var(--coffee-latte)"
+                    : "var(--forest-sage)",
+              }}
             />
             {locLoading ? (
-              <span className="font-mono text-[0.75rem] text-text-muted animate-pulse">
+              <span className="font-mono text-[0.75rem] text-text-muted animate-pulse flex-1">
                 Mendeteksi lokasi...
               </span>
+            ) : gpsError ? (
+              <div className="flex-1 min-w-0">
+                <span
+                  className="font-mono text-[0.72rem] block"
+                  style={{
+                    color:
+                      gpsError.type === "permission"
+                        ? "#f87171"
+                        : "var(--coffee-latte)",
+                  }}
+                >
+                  {gpsError.msg}
+                </span>
+                {gpsError.type === "permission" && (
+                  <span className="font-mono text-[0.62rem] text-text-muted block mt-0.5">
+                    Pengaturan → Privasi → Lokasi → Browser
+                  </span>
+                )}
+              </div>
             ) : form.locationCoords ? (
               <>
                 <span
@@ -523,15 +872,16 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
                 </span>
               </>
             ) : (
-              <span className="font-mono text-[0.75rem] text-text-muted">
-                Lokasi tidak terdeteksi
+              <span className="font-mono text-[0.75rem] text-text-muted flex-1">
+                Menunggu GPS...
               </span>
             )}
             <button
               onClick={captureGPS}
-              className="font-mono text-[0.65rem] shrink-0 transition-colors"
+              className="font-mono text-[0.65rem] shrink-0 transition-colors hover:opacity-70"
               style={{ color: "var(--coffee-latte)" }}
-              title="Refresh lokasi"
+              title="Coba lagi deteksi lokasi"
+              aria-label="Refresh lokasi GPS"
             >
               <i className="fas fa-rotate-right" />
             </button>
@@ -549,10 +899,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
           <textarea
             value={form.notes}
             onChange={(e) =>
-              setForm((p) => ({
-                ...p,
-                notes: e.target.value.slice(0, 500),
-              }))
+              setForm((p) => ({ ...p, notes: e.target.value.slice(0, 500) }))
             }
             rows={2}
             placeholder="Kondisi khusus, keterangan sak/wadah, dll..."
@@ -573,117 +920,60 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
           </p>
         </div>
 
-        {/* Skip section */}
-        {showSkip && (
-          <div
-            className="rounded-md p-3 border"
+        {/* Action buttons */}
+        <div
+          className="flex gap-2 pt-1 border-t"
+          style={{ borderColor: "var(--border-subtle)" }}
+        >
+          <button
+            onClick={handleSubmit}
+            className="flex-1 py-3 rounded-md text-[0.82rem] font-medium tracking-[0.03em] border flex items-center justify-center gap-2 transition-all duration-200 hover:-translate-y-0.5"
             style={{
-              background: "var(--bg-elevated)",
-              borderColor: "var(--border-default)",
+              background: "var(--forest-moss)",
+              color: "var(--forest-mist)",
+              borderColor: "rgba(122,171,126,0.3)",
             }}
           >
-            <p className="text-[0.78rem] text-text-secondary mb-2 font-medium">
-              Alasan melewati stop ini:
-            </p>
-            <div className="flex flex-col gap-1.5 mb-2">
-              {SKIP_REASONS.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setSkipReason(r)}
-                  className="text-left px-3 py-2 rounded-md text-[0.78rem] border transition-all duration-150"
-                  style={{
-                    background:
-                      skipReason === r
-                        ? "rgba(248,113,113,0.06)"
-                        : "var(--bg-card)",
-                    borderColor:
-                      skipReason === r
-                        ? "rgba(248,113,113,0.3)"
-                        : "var(--border-subtle)",
-                    color: skipReason === r ? "#f87171" : "var(--text-muted)",
-                  }}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            {skipReason === "Lainnya" && (
-              <input
-                value={customReason}
-                onChange={(e) => setCustomReason(e.target.value)}
-                placeholder="Tuliskan alasan..."
-                style={{ ...inputBase, marginBottom: "8px" }}
-              />
-            )}
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={handleConfirmSkip}
-                disabled={
-                  !skipReason ||
-                  (skipReason === "Lainnya" && !customReason.trim())
-                }
-                className="flex-1 py-2 rounded-md text-[0.78rem] font-medium border transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{
-                  background: "rgba(248,113,113,0.08)",
-                  color: "#f87171",
-                  borderColor: "rgba(248,113,113,0.25)",
-                }}
-              >
-                Konfirmasi lewati
-              </button>
-              <button
-                onClick={() => {
-                  setShowSkip(false);
-                  setSkipReason("");
-                  setCustomReason("");
-                }}
-                className="px-4 py-2 rounded-md text-[0.78rem] border text-text-muted"
-                style={{ borderColor: "var(--border-subtle)" }}
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Action buttons */}
-        {!showSkip && (
-          <div
-            className="flex gap-2 pt-1 border-t"
-            style={{ borderColor: "var(--border-subtle)" }}
+            {ctaLabel}
+          </button>
+          {/* REC 7 — tombol Lewati langsung buka QuickSkipSheet */}
+          <button
+            onClick={() => setShowSkipSheet(true)}
+            className="px-4 py-3 rounded-md text-[0.75rem] font-mono tracking-[0.06em] border text-text-muted hover:text-text-secondary transition-all duration-150"
+            style={{ borderColor: "var(--border-default)" }}
           >
-            <button
-              onClick={handleSubmit}
-              className="flex-1 py-3 rounded-md text-[0.82rem] font-medium tracking-[0.03em] border flex items-center justify-center gap-2 transition-all duration-200 hover:-translate-y-0.5"
-              style={{
-                background: "var(--forest-moss)",
-                color: "var(--forest-mist)",
-                borderColor: "rgba(122,171,126,0.3)",
-              }}
-            >
-              {ctaLabel}
-            </button>
-            <button
-              onClick={() => setShowSkip(true)}
-              className="px-4 py-3 rounded-md text-[0.75rem] font-mono tracking-[0.06em] border text-text-muted hover:text-text-secondary transition-all duration-150"
-              style={{ borderColor: "var(--border-default)" }}
-            >
-              Lewati
-            </button>
-          </div>
-        )}
+            Lewati
+          </button>
+        </div>
 
         <p className="font-mono text-[0.6rem] text-text-muted text-center -mt-1">
           Draft tersimpan otomatis · GPS diambil saat form dibuka
         </p>
       </div>
+
+      {/* REC 7 — QuickSkipSheet muncul di bawah form body, bukan overlay */}
+      {showSkipSheet && (
+        <div
+          className="border-t"
+          style={{ borderColor: "rgba(248,113,113,0.15)" }}
+        >
+          <QuickSkipSheet
+            stopName={stop.mitra_name}
+            onConfirm={(reason) => {
+              localStorage.removeItem(`rebru_draft_${stop.id}`);
+              onSkip(reason);
+              setShowSkipSheet(false);
+            }}
+            onCancel={() => setShowSkipSheet(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RouteCard
-// FIXED: isClickable — hanya stop "pending" yang bisa diklik untuk buka form
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface RouteCardProps {
@@ -703,8 +993,6 @@ function RouteCard({
   onSubmit,
   onSkip,
 }: RouteCardProps) {
-  // FIXED: hanya pending yang interaktif
-  // done/skipped = read-only, tidak ada form yang bisa dibuka
   const isPending = stop.status === "pending";
 
   return (
@@ -744,7 +1032,6 @@ function RouteCard({
                 : stop.status === "skipped"
                   ? "rgba(248,113,113,0.12)"
                   : "var(--border-subtle)",
-          // Stop selesai/dilewati: opasitas lebih rendah agar hierarki visual jelas
           opacity: stop.status === "pending" ? 1 : 0.65,
         }}
       >
@@ -779,9 +1066,25 @@ function RouteCard({
                 ~{stop.estimated_kg} kg
               </span>
             )}
+            {/*
+              REC 3 — Timestamp selesai langsung di route card
+              Sebelumnya hanya tampil di HistorySection
+            */}
             {stop.status === "done" && stop.completed_at && (
-              <span className="font-mono text-[0.65rem] text-text-muted">
+              <span
+                className="font-mono text-[0.65rem] flex items-center gap-1"
+                style={{ color: "var(--forest-sage)" }}
+              >
+                <i className="fas fa-check text-[0.55rem]" />
                 selesai {stop.completed_at}
+              </span>
+            )}
+            {stop.status === "skipped" && stop.skip_reason && (
+              <span
+                className="font-mono text-[0.65rem]"
+                style={{ color: "#f87171" }}
+              >
+                {stop.skip_reason}
               </span>
             )}
           </div>
@@ -789,7 +1092,6 @@ function RouteCard({
 
         <div className="shrink-0 flex items-center gap-1">
           <StatusBadge stop={stop} />
-          {/* Chevron hanya untuk stop pending */}
           {isPending && (
             <span
               className="font-mono text-[0.65rem] tracking-[0.04em] transition-transform duration-200 ml-1"
@@ -805,7 +1107,6 @@ function RouteCard({
         </div>
       </div>
 
-      {/* Form inline — hanya muncul untuk stop aktif yang masih pending */}
       {isActive && isPending && (
         <InlineForm
           stop={stop}
@@ -827,6 +1128,8 @@ interface RouteSectionProps {
   routeDate: string;
   initialStops: RouteStop[];
   onStopsChange?: (stops: RouteStop[]) => void;
+  // Fix #9 — callback spesifik untuk satu stop yang di-commit setelah undo window
+  onCommitStop?: (stop: RouteStop) => void;
   onHeroAction?: (stopId: string) => void;
 }
 
@@ -835,12 +1138,21 @@ export default function RouteSection({
   routeDate,
   initialStops,
   onStopsChange,
+  onCommitStop,
   onHeroAction,
 }: RouteSectionProps) {
   const [stops, setStops] = useState<RouteStop[]>(initialStops);
   const [activeStopId, setActiveStopId] = useState<string | null>(() => {
     return initialStops.find((s) => s.status === "pending")?.id ?? null;
   });
+  const [heroFormOpen, setHeroFormOpen] = useState(false);
+  // Fix #9 — undo state: UI sudah update, DB commit tertunda 10 detik
+  const [undoState, setUndoState] = useState<{
+    stopId: string;
+    prevStop: RouteStop;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const doneStops = stops.filter((s) => s.status === "done");
   const nextPendingStop = stops.find((s) => s.status === "pending") ?? null;
@@ -853,16 +1165,6 @@ export default function RouteSection({
         )
       : 0;
 
-  function handleHeroClick(stopId: string) {
-    setActiveStopId(stopId);
-    onHeroAction?.(stopId);
-    // Scroll ke stop card yang bersangkutan setelah render
-    setTimeout(() => {
-      const el = document.getElementById(`stop-card-${stopId}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
-  }
-
   function updateStops(updated: RouteStop[]) {
     setStops(updated);
     onStopsChange?.(updated);
@@ -870,11 +1172,40 @@ export default function RouteSection({
 
   function handleToggle(stopId: string) {
     setActiveStopId((prev) => (prev === stopId ? null : stopId));
+    // Menutup hero form jika collector membuka stop dari route list
+    setHeroFormOpen(false);
+  }
+
+  // Fix #9 — applyWithUndo: update UI segera, commit DB setelah 10d
+  function applyWithUndo(
+    stopId: string,
+    updated: RouteStop[],
+    message: string,
+  ) {
+    const prevStop = stops.find((s) => s.id === stopId)!;
+    const committedStop = updated.find((s) => s.id === stopId)!;
+    // Jika ada undo pending sebelumnya, langsung confirm dulu
+    if (undoState) undoState.onConfirm();
+    updateStops(updated);
+    setHeroFormOpen(false);
+    const currentIdx = updated.findIndex((s) => s.id === stopId);
+    const nextPending = updated
+      .slice(currentIdx + 1)
+      .find((s) => s.status === "pending");
+    setActiveStopId(nextPending?.id ?? null);
+    setUndoState({
+      stopId,
+      prevStop,
+      message,
+      // onConfirm: kirim tepat satu stop ke page.tsx via onCommitStop
+      onConfirm: () => {
+        setUndoState(null);
+        onCommitStop?.(committedStop);
+      },
+    });
   }
 
   function handleSubmit(stopId: string, formData: StopFormData) {
-    // FIX #8: nowWITA() + getUTC* agar jam selesai tercatat dalam WITA
-    // getHours() bergantung timezone browser → salah jika bukan WITA
     const now = nowWITA();
     const timeStr = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
 
@@ -887,20 +1218,19 @@ export default function RouteSection({
             condition: formData.condition ?? undefined,
             notes: formData.notes || undefined,
             photo_preview: formData.photoPreview ?? undefined,
+            photo_file: formData.photo ?? undefined,
             location_coords: formData.locationCoords ?? undefined,
             location_accuracy: formData.locationAccuracy ?? undefined,
             completed_at: timeStr,
           }
         : s,
     );
-    updateStops(updated);
-
-    // Auto-advance ke stop pending berikutnya
-    const currentIdx = updated.findIndex((s) => s.id === stopId);
-    const nextPending = updated
-      .slice(currentIdx + 1)
-      .find((s) => s.status === "pending");
-    setActiveStopId(nextPending?.id ?? null);
+    const stopName = stops.find((s) => s.id === stopId)?.mitra_name ?? "Stop";
+    applyWithUndo(
+      stopId,
+      updated,
+      `✓ ${stopName} — ${formData.qty} kg tersimpan`,
+    );
   }
 
   function handleSkip(stopId: string, reason: string) {
@@ -909,17 +1239,22 @@ export default function RouteSection({
         ? { ...s, status: "skipped" as const, skip_reason: reason }
         : s,
     );
-    updateStops(updated);
-
-    const currentIdx = updated.findIndex((s) => s.id === stopId);
-    const nextPending = updated
-      .slice(currentIdx + 1)
-      .find((s) => s.status === "pending");
-    setActiveStopId(nextPending?.id ?? null);
+    const stopName = stops.find((s) => s.id === stopId)?.mitra_name ?? "Stop";
+    applyWithUndo(stopId, updated, `${stopName} dilewati — ${reason}`);
   }
 
-  // FIX #7: formatDisplayDate (WITA-aware, tidak bergantung locale browser)
-  // new Date("YYYY-MM-DD") parsed sebagai UTC midnight → getDay() bisa salah
+  // Fix #9 — batalkan: kembalikan stop ke state sebelumnya
+  function handleUndo() {
+    if (!undoState) return;
+    const restored = stops.map((s) =>
+      s.id === undoState.stopId ? undoState.prevStop : s,
+    );
+    setStops(restored);
+    setActiveStopId(undoState.stopId);
+    setHeroFormOpen(false);
+    setUndoState(null);
+  }
+
   const formattedDate = formatDisplayDate(routeDate, {
     weekday: true,
     longMonth: true,
@@ -1025,13 +1360,18 @@ export default function RouteSection({
         </div>
       </div>
 
-      {/* Hero Card — stop berikutnya yang harus dikerjakan */}
+      {/*
+        REC 4 — Hero Card dengan form inline di dalamnya
+        Sebelumnya: tombol "Mulai Catat →" membuka form di route list
+        (disorienting scroll, terutama di mobile)
+        Sekarang: form muncul tepat di dalam blok hero card ini sendiri
+      */}
       {nextPendingStop && (
         <div
           className="mb-5 rounded-lg overflow-hidden"
           style={{
             background: "var(--bg-card)",
-            border: "1px solid var(--coffee-latte)",
+            border: `1px solid ${heroFormOpen ? "var(--coffee-latte)" : "var(--border-default)"}`,
           }}
         >
           {/* Label */}
@@ -1053,7 +1393,7 @@ export default function RouteSection({
             </span>
           </div>
 
-          {/* Konten */}
+          {/* Info stop */}
           <div className="px-4 py-3">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex-1 min-w-0">
@@ -1067,7 +1407,6 @@ export default function RouteSection({
               <CategoryPill cat={nextPendingStop.mitra_category} />
             </div>
 
-            {/* Info baris */}
             <div className="flex items-center gap-4 mb-4">
               <div className="flex items-center gap-1.5">
                 <i
@@ -1095,19 +1434,48 @@ export default function RouteSection({
               </div>
             </div>
 
-            {/* CTA */}
-            <button
-              onClick={() => handleHeroClick(nextPendingStop.id)}
-              className="w-full py-3 rounded-md text-[0.85rem] font-medium tracking-[0.03em] transition-all duration-200 hover:-translate-y-0.5"
-              style={{
-                background: "var(--coffee-latte)",
-                color: "var(--bg-primary)",
-                border: "none",
-              }}
-            >
-              Mulai Catat →
-            </button>
+            {/* REC 4 — CTA: toggle form di dalam hero card, bukan scroll ke route list */}
+            {!heroFormOpen && (
+              <button
+                onClick={() => {
+                  setHeroFormOpen(true);
+                  // Sync route list agar stop ini tidak terbuka dua kali
+                  setActiveStopId(null);
+                  onHeroAction?.(nextPendingStop.id);
+                }}
+                className="w-full py-3 rounded-md text-[0.85rem] font-medium tracking-[0.03em] transition-all duration-200 hover:-translate-y-0.5"
+                style={{
+                  background: "var(--coffee-latte)",
+                  color: "var(--bg-primary)",
+                  border: "none",
+                }}
+              >
+                Mulai Catat →
+              </button>
+            )}
           </div>
+
+          {/* REC 4 — InlineForm muncul di dalam hero card (proximity terjaga) */}
+          {heroFormOpen && (
+            <div
+              className="border-t"
+              style={{ borderColor: "rgba(196,149,106,0.2)" }}
+            >
+              <InlineForm
+                stop={nextPendingStop}
+                nextStopName={
+                  stops
+                    .filter(
+                      (s) =>
+                        s.status === "pending" && s.id !== nextPendingStop.id,
+                    )
+                    .sort((a, b) => a.order - b.order)[0]?.mitra_name ?? null
+                }
+                onSubmit={(data) => handleSubmit(nextPendingStop.id, data)}
+                onSkip={(reason) => handleSkip(nextPendingStop.id, reason)}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -1141,8 +1509,8 @@ export default function RouteSection({
           })}
         </div>
 
-        {/* Completion banner */}
-        {stops.every((s) => s.status !== "pending") && (
+        {/* Completion banner — hanya tampil setelah undo window tutup */}
+        {stops.every((s) => s.status !== "pending") && !undoState && (
           <div
             className="mt-4 p-4 rounded-md border text-center"
             style={{
@@ -1165,6 +1533,16 @@ export default function RouteSection({
           </div>
         )}
       </div>
+
+      {/* Fix #9 — UndoToast: commit ke DB setelah 10d atau saat dismiss */}
+      {undoState && (
+        <UndoToast
+          message={undoState.message}
+          onUndo={handleUndo}
+          onConfirm={undoState.onConfirm}
+          durationMs={10000}
+        />
+      )}
     </div>
   );
 }

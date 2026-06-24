@@ -1,4 +1,7 @@
 /* src/app/globals.css */
+
+@import "./products/product-stage.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

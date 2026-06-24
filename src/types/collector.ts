@@ -31,7 +31,11 @@ export interface RouteStop {
   actual_kg?: number;
   condition?: ConditionType;
   notes?: string;
-  photo_preview?: string; // base64 data URL untuk preview lokal
+  photo_preview?: string; // base64 data URL untuk preview lokal di UI
+  photo_file?: File; // ← BARU: File object asli untuk upload ke Supabase Storage
+  //   Diset di RouteSection.handleSubmit dari formData.photo
+  //   Dikonsumsi di page.tsx → uploadStopPhoto() → photo_url
+  //   Tidak pernah dikirim ke DB (hanya ada di client state)
   location_coords?: string; // "lat, lng"
   location_accuracy?: number; // meter
   completed_at?: string; // format "HH:MM"

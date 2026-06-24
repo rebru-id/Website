@@ -1,15 +1,13 @@
 "use client";
 // src/components/collector/CollectorNavbar.tsx
 // ─────────────────────────────────────────────────────────────────────────────
-// MIGRATION: Tombol logout diperbarui untuk Supabase Auth
-//
 // Perubahan dari versi sebelumnya:
-//   1. Destruktur `logout` dari useAuthModal() — bukan `setSession`
-//   2. Tombol Logout memanggil logout() langsung (async, fire-and-forget)
-//      logout() di AuthModalContext sudah handle: signOut + setSession(null)
-//   3. Hapus inline code yang tidak valid secara sintaks JSX
 //
-// Tidak ada perubahan lain — UI, props, dan logika navbar tidak berubah.
+//   REC 2 — Compact stats di mobile navbar
+//     Sebelumnya: stats (kg + stop progress) hidden di mobile dengan `hidden md:flex`
+//     Sekarang: di mobile tampil versi compact "X/Y" dalam satu pill kecil
+//     di samping avatar, agar collector bisa lihat progress tanpa scroll.
+//     Di md ke atas, layout stats lengkap tetap seperti semula.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Link from "next/link";
@@ -41,7 +39,6 @@ export default function CollectorNavbar({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   async function handleLogout() {
-    // Jika masih ada stop pending, tampilkan konfirmasi dulu
     if (pendingStopsCount > 0) {
       setShowLogoutConfirm(true);
       return;
@@ -56,7 +53,6 @@ export default function CollectorNavbar({
     router.push("/");
   }
 
-  // Ambil inisial dari nama: "Rizky Kahwa" → "RK"
   const initials = collectorName
     .split(" ")
     .map((n) => n[0])
@@ -140,7 +136,7 @@ export default function CollectorNavbar({
           borderColor: "var(--border-default)",
         }}
       >
-        <div className="max-w-[1280px] mx-auto flex items-center justify-between px-6 md:px-12 h-14">
+        <div className="max-w-[1280px] mx-auto flex items-center justify-between px-4 md:px-12 h-14">
           {/* ── Kiri: Brand + breadcrumb ── */}
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 shrink-0">
@@ -166,7 +162,7 @@ export default function CollectorNavbar({
             </span>
           </div>
 
-          {/* ── Tengah: Shift stats — disembunyikan di mobile ── */}
+          {/* ── Tengah: Shift stats lengkap — hanya di md ke atas ── */}
           <div className="hidden md:flex items-center">
             {/* kg terkumpul */}
             <div
@@ -233,9 +229,9 @@ export default function CollectorNavbar({
             </div>
           </div>
 
-          {/* ── Kanan: Identitas + logout ── */}
-          <div className="flex items-center gap-3">
-            {/* Nama + role (tersembunyi di layar sangat kecil) */}
+          {/* ── Kanan: Identitas + compact stats mobile + logout ── */}
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Nama + role — tersembunyi di layar sangat kecil */}
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-[0.82rem] font-medium text-text-primary leading-none">
                 {collectorName.split(" ")[0]}
@@ -258,6 +254,58 @@ export default function CollectorNavbar({
               }}
             >
               {initials}
+            </div>
+
+            {/*
+              REC 2 — Compact stats pill — hanya di mobile (< md)
+              Menampilkan "X.Xkg · Y/Z" dalam satu pill ringkas
+              agar progress terlihat tanpa harus scroll ke bawah.
+            */}
+            <div
+              className="md:hidden flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+              style={{
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border-default)",
+              }}
+            >
+              {/* kg */}
+              <span
+                className="font-mono text-[0.68rem] font-semibold"
+                style={{ color: "var(--coffee-latte)" }}
+              >
+                {collectedKg % 1 === 0
+                  ? collectedKg.toFixed(0)
+                  : collectedKg.toFixed(1)}
+                <span className="font-normal opacity-70">kg</span>
+              </span>
+              {/* divider */}
+              <span
+                className="w-px h-3 rounded-full"
+                style={{ background: "var(--border-default)" }}
+              />
+              {/* stop progress */}
+              <span
+                className="font-mono text-[0.68rem] font-semibold"
+                style={{ color: "var(--forest-sage)" }}
+              >
+                {stopsCompleted}
+                <span className="text-text-muted font-normal">
+                  /{totalStops}
+                </span>
+              </span>
+              {/* Mini progress bar */}
+              <div
+                className="w-8 h-[2px] rounded-full overflow-hidden"
+                style={{ background: "var(--border-subtle)" }}
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${progressPct}%`,
+                    background: "var(--forest-sage)",
+                  }}
+                />
+              </div>
             </div>
 
             {/* Logout */}
