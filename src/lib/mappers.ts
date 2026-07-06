@@ -29,6 +29,7 @@ export function mapSupabaseToUIProduct(row: any): UIProduct {
 
     // ── Visual ──
     icon: row.icon,
+    imageUrl: row.image_url, // snake_case → camelCase, null jika belum diisi
     accent: row.accent,
     accentBg: row.accent_bg, // snake_case → camelCase
     accentBorder: row.accent_border,

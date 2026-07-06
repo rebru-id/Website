@@ -91,6 +91,7 @@ export interface UIProduct {
 
   // ── Visual ──
   icon?: string;
+  imageUrl?: string; // path/URL foto produk asli — fallback ke `icon` jika kosong
   accent: string;
   accentBg?: string;
   accentBorder?: string;

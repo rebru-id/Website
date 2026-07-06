@@ -39,6 +39,35 @@ import type {
 } from "@/types/collector";
 import { DEFAULT_FORM_DATA, SKIP_REASONS } from "@/types/collector";
 import { nowWITA, formatDisplayDate } from "@/utils/date";
+import dynamic from "next/dynamic";
+
+// ── MiniMap: lazy-loaded, ssr:false — Leaflet butuh window object ──────────
+// MapSkeleton ditampilkan saat chunk JS sedang di-download
+function MapSkeleton() {
+  return (
+    <div
+      className="h-[180px] flex flex-col items-center justify-center gap-2 animate-pulse"
+      style={{ background: "var(--bg-card)" }}
+    >
+      <i
+        className="fas fa-map text-[1.2rem]"
+        style={{ color: "var(--border-strong)" }}
+      />
+      <span className="text-[0.72rem] text-text-muted">Memuat peta...</span>
+    </div>
+  );
+}
+
+const MiniMap = dynamic(() => import("@/components/collector/LeafletMap"), {
+  ssr: false,
+  loading: () => <MapSkeleton />,
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sesi 4 (revised) — MiniMap via react-leaflet
+// Di-load lazily via next/dynamic (ssr: false) agar tidak crash SSR.
+// CSS leaflet wajib di-import di src/app/globals.css.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper sub-components
@@ -128,25 +157,58 @@ function StopBullet({
   stop: RouteStop;
   isActive: boolean;
 }) {
-  const base =
-    "w-[22px] h-[22px] rounded-[5px] flex items-center justify-center text-[0.68rem] font-semibold font-mono shrink-0";
+  // Sesi 2 item 2.2 — spring bounce saat status berubah ke done/skipped
+  const [pop, setPop] = useState(false);
+  const prevStatus = useRef(stop.status);
+
+  useEffect(() => {
+    if (
+      prevStatus.current === "pending" &&
+      (stop.status === "done" || stop.status === "skipped")
+    ) {
+      setPop(true);
+      setTimeout(() => setPop(false), 400);
+    }
+    prevStatus.current = stop.status;
+  }, [stop.status]);
+
+  const base = cn(
+    "w-[22px] h-[22px] rounded-[5px] flex items-center justify-center text-[0.68rem] font-semibold font-mono shrink-0 transition-all",
+    pop && "scale-[1.35]",
+  );
+
   if (stop.status === "done")
     return (
-      <span
-        className={cn(base)}
-        style={{
-          background: "rgba(122,171,126,0.15)",
-          color: "var(--forest-sage)",
-        }}
-      >
-        ✓
-      </span>
+      <>
+        <span
+          className={cn(
+            "w-[22px] h-[22px] rounded-[5px] flex items-center justify-center text-[0.68rem] font-semibold font-mono shrink-0",
+          )}
+          style={{
+            background: "rgba(122,171,126,0.15)",
+            color: "var(--forest-sage)",
+            animation: pop
+              ? "bullet-pop 0.38s cubic-bezier(0.34,1.56,0.64,1)"
+              : "none",
+          }}
+        >
+          ✓
+        </span>
+      </>
     );
   if (stop.status === "skipped")
     return (
       <span
-        className={cn(base)}
-        style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}
+        className={cn(
+          "w-[22px] h-[22px] rounded-[5px] flex items-center justify-center text-[0.68rem] font-semibold font-mono shrink-0",
+        )}
+        style={{
+          background: "rgba(248,113,113,0.1)",
+          color: "#f87171",
+          animation: pop
+            ? "bullet-pop 0.38s cubic-bezier(0.34,1.56,0.64,1)"
+            : "none",
+        }}
       >
         ✕
       </span>
@@ -154,7 +216,7 @@ function StopBullet({
   if (isActive)
     return (
       <span
-        className={cn(base)}
+        className={base}
         style={{
           background: "var(--coffee-latte)",
           color: "var(--bg-primary)",
@@ -165,7 +227,9 @@ function StopBullet({
     );
   return (
     <span
-      className={cn(base)}
+      className={cn(
+        "w-[22px] h-[22px] rounded-[5px] flex items-center justify-center text-[0.68rem] font-semibold font-mono shrink-0",
+      )}
       style={{
         background: "var(--bg-elevated)",
         border: "1px solid var(--border-default)",
@@ -336,72 +400,148 @@ function UndoToast({
   onConfirm,
   durationMs = 10000,
 }: UndoToastProps) {
-  const [remaining, setRemaining] = useState(Math.ceil(durationMs / 1000));
   const [visible, setVisible] = useState(false);
+  // Sesi 1 item 1.3 — countdown pakai CSS animation bukan setInterval
+  // sehingga progress bar shrink secara smooth linear tanpa step/jank
+  const [secondsLeft, setSecondsLeft] = useState(Math.ceil(durationMs / 1000));
 
   useEffect(() => {
+    // Slide-in setelah mount
     const showTimer = setTimeout(() => setVisible(true), 10);
-    const interval = setInterval(() => {
-      setRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
+    // Commit ke DB setelah durasi
+    const confirmTimer = setTimeout(() => onConfirm(), durationMs);
+    // Countdown teks saja (1 detik sekali) — bukan untuk animasi bar
+    const tick = setInterval(() => {
+      setSecondsLeft((p) => Math.max(0, p - 1));
     }, 1000);
-    const confirmTimer = setTimeout(() => {
-      onConfirm();
-    }, durationMs);
     return () => {
       clearTimeout(showTimer);
       clearTimeout(confirmTimer);
-      clearInterval(interval);
+      clearInterval(tick);
     };
   }, [durationMs, onConfirm]);
 
-  const pct = (remaining / Math.ceil(durationMs / 1000)) * 100;
+  return (
+    <>
+      <div
+        className="fixed bottom-6 left-1/2 z-[9998] w-full max-w-[360px] rounded-lg overflow-hidden shadow-xl"
+        style={{
+          transform: `translateX(-50%) translateY(${visible ? "0" : "20px"})`,
+          opacity: visible ? 1 : 0,
+          transition:
+            "transform 0.3s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s ease",
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border-default)",
+        }}
+      >
+        {/* Progress bar — CSS animation smooth dari 100% ke 0% */}
+        <div
+          style={{
+            height: "3px",
+            background: "var(--coffee-latte)",
+            animationName: "countdown",
+            animationDuration: `${durationMs}ms`,
+            animationTimingFunction: "linear",
+            animationFillMode: "forwards",
+          }}
+        />
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-[0.85rem] font-medium text-text-primary truncate">
+              {message}
+            </p>
+            <p className="text-[0.7rem] text-text-muted mt-0.5">
+              Tersimpan dalam {secondsLeft} detik...
+            </p>
+          </div>
+          <button
+            onClick={onUndo}
+            className="shrink-0 text-[0.75rem] px-3 py-1.5 rounded-md border font-medium transition-all duration-150 hover:-translate-y-0.5 active:scale-95"
+            style={{
+              background: "rgba(196,149,106,0.1)",
+              color: "var(--coffee-latte)",
+              borderColor: "rgba(196,149,106,0.3)",
+            }}
+          >
+            Batalkan
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sesi 3 item 3.2 — StepButton dengan long-press
+//
+// Tap          → ±0.5 kg (presisi fine-tune)
+// Hold 0.5s    → ±2 kg per 150ms (lompatan medium)
+// Hold 1.5s    → ±5 kg per 150ms (lompatan cepat)
+//
+// Semua timer dibersihkan di cleanup untuk mencegah memory leak.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StepButton({
+  dir,
+  onStep,
+}: {
+  dir: 1 | -1;
+  onStep: (delta: number) => void;
+}) {
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const holdStart = useRef<number>(0);
+
+  function startHold() {
+    holdStart.current = Date.now();
+
+    // Fase 1 — setelah 500ms, mulai repeat ±2
+    holdTimer.current = setTimeout(() => {
+      repeatRef.current = setInterval(() => {
+        const elapsed = Date.now() - holdStart.current;
+        // Fase 2 — setelah 1500ms total, eskalasi ke ±5
+        const step = elapsed > 1500 ? 2 : 0.5;
+        onStep(dir * (elapsed > 1500 ? 5 : 2));
+        void step; // suppress unused warning
+      }, 150);
+    }, 500);
+  }
+
+  function stopHold() {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    if (repeatRef.current) clearInterval(repeatRef.current);
+    holdTimer.current = null;
+    repeatRef.current = null;
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => stopHold(), []);
+
+  const label = dir === -1 ? "−" : "+";
+  const ariaLabel = dir === -1 ? "Kurangi kuantitas" : "Tambah kuantitas";
 
   return (
-    <div
-      className="fixed bottom-6 left-1/2 z-[9998] w-full max-w-[360px] rounded-lg overflow-hidden shadow-xl transition-all duration-300"
+    <button
+      aria-label={ariaLabel}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        onStep(dir * 0.5); // tap langsung
+        startHold();
+      }}
+      onPointerUp={stopHold}
+      onPointerLeave={stopHold}
+      onPointerCancel={stopHold}
+      className="w-10 h-10 rounded-lg flex items-center justify-center text-xl font-light border shrink-0 select-none transition-all duration-100 active:scale-90"
       style={{
-        transform: `translateX(-50%) translateY(${visible ? "0" : "20px"})`,
-        opacity: visible ? 1 : 0,
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border-default)",
+        background: "var(--bg-card)",
+        borderColor: "var(--border-default)",
+        color: "var(--coffee-latte)",
+        userSelect: "none",
+        touchAction: "none",
       }}
     >
-      <div
-        className="h-[3px] transition-all"
-        style={{
-          width: `${pct}%`,
-          background: "var(--coffee-latte)",
-          transition: "width 1s linear",
-        }}
-      />
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-[0.82rem] font-medium text-text-primary truncate">
-            {message}
-          </p>
-          <p className="font-mono text-[0.65rem] text-text-muted mt-0.5">
-            Tersimpan dalam {remaining}d...
-          </p>
-        </div>
-        <button
-          onClick={onUndo}
-          className="shrink-0 font-mono text-[0.72rem] tracking-[0.06em] px-3 py-1.5 rounded-md border font-medium transition-all duration-150 hover:-translate-y-0.5"
-          style={{
-            background: "rgba(196,149,106,0.1)",
-            color: "var(--coffee-latte)",
-            borderColor: "rgba(196,149,106,0.3)",
-          }}
-        >
-          Batalkan
-        </button>
-      </div>
-    </div>
+      {label}
+    </button>
   );
 }
 
@@ -494,10 +634,15 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
       condition: form.condition,
       notes: form.notes,
     };
-    localStorage.setItem(`rebru_draft_${stop.id}`, JSON.stringify(draft));
+    // Fix 2 — SSR guard: localStorage hanya tersedia di browser
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`rebru_draft_${stop.id}`, JSON.stringify(draft));
+    }
   }, [form.qty, form.condition, form.notes, stop.id]);
 
   useEffect(() => {
+    // Fix 2 — SSR guard
+    if (typeof window === "undefined") return;
     const raw = localStorage.getItem(`rebru_draft_${stop.id}`);
     if (!raw) return;
     try {
@@ -526,7 +671,9 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     reader.readAsDataURL(file);
   }
 
-  // Fix #2 — validate bisa dipanggil kapan saja
+  // Jalur 1 fix 1 — validate tanpa stale closure
+  // Logika validasi di-inline langsung di useEffect dengan dependency eksplisit.
+  // Tidak ada eslint-disable, tidak ada fungsi wrapper yang bisa stale.
   function validate(silent = false): boolean {
     const errs: typeof errors = {};
     if (form.qty <= 0) errs.qty = "Kuantitas harus lebih dari 0";
@@ -535,10 +682,12 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     return Object.keys(errs).length === 0;
   }
 
-  // Fix #2 — realtime validation setelah hasAttemptedSubmit=true
   useEffect(() => {
-    if (hasAttemptedSubmit) validate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!hasAttemptedSubmit) return;
+    const errs: Partial<Record<keyof StopFormData, string>> = {};
+    if (form.qty <= 0) errs.qty = "Kuantitas harus lebih dari 0";
+    if (!form.condition) errs.condition = "Pilih kondisi ampas";
+    setErrors(errs);
   }, [form.qty, form.condition, hasAttemptedSubmit]);
 
   function triggerShake(field: string) {
@@ -553,7 +702,10 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
       else if (!form.condition) triggerShake("condition");
       return;
     }
-    localStorage.removeItem(`rebru_draft_${stop.id}`);
+    // Fix 2 — SSR guard
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`rebru_draft_${stop.id}`);
+    }
     onSubmit(form);
   }
 
@@ -577,25 +729,16 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
   return (
     <div
       ref={formRef}
-      className="mt-1 mb-2 rounded-md overflow-hidden"
+      className="mt-1 mb-2 rounded-md overflow-hidden flex flex-col"
       style={{
         background: "var(--bg-surface)",
         border: "1px solid var(--border-strong)",
         borderTop: "2px solid var(--coffee-latte)",
+        // Sesi 2 item 2.1 — max-height agar form tidak terlalu panjang di mobile
+        // Action bar sticky di bawah, konten di atas bisa di-scroll
+        maxHeight: "85dvh",
       }}
     >
-      {/* Fix #2 — keyframes shake untuk field validation */}
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          15% { transform: translateX(-5px); }
-          30% { transform: translateX(5px); }
-          45% { transform: translateX(-4px); }
-          60% { transform: translateX(4px); }
-          75% { transform: translateX(-2px); }
-          90% { transform: translateX(2px); }
-        }
-      `}</style>
       {/* Context banner */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b"
@@ -625,132 +768,214 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
         </div>
       </div>
 
-      <div className="p-4 flex flex-col gap-4">
-        {/* Qty + Kondisi */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Qty stepper */}
-          <div>
-            <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
-              Kuantitas <span style={{ color: "var(--coffee-latte)" }}>*</span>
-            </label>
-            {/* Fix #2 — shake saat qty invalid setelah submit pertama */}
-            <div
-              className="flex items-center gap-2"
-              style={{
-                animation: shakeField === "qty" ? "shake 0.45s ease" : "none",
-              }}
+      {/* Sesi 2 item 2.1 — scrollable content area, action bar di-pin di bawah */}
+      <div className="p-4 flex flex-col gap-4 overflow-y-auto flex-1">
+        {/*
+          Sesi 3 — MeasurementRow terintegrasi
+          Qty dan Kondisi dalam satu kartu visual — satu keputusan, bukan dua field terpisah.
+          Dipisahkan oleh divider vertikal untuk memberi batas yang jelas tanpa header berulang.
+        */}
+        <div
+          className="rounded-lg"
+          style={{
+            border: "1px solid var(--border-default)",
+            background: "var(--bg-elevated)",
+            animation:
+              shakeField === "qty" || shakeField === "condition"
+                ? "shake 0.45s ease"
+                : "none",
+            overflow: "visible",
+          }}
+        >
+          {/* Row header */}
+          <div
+            className="flex items-center justify-between px-3 py-2 border-b rounded-t-lg"
+            style={{
+              borderColor: "var(--border-subtle)",
+              background: "var(--bg-card)",
+            }}
+          >
+            <span className="text-[0.68rem] font-medium tracking-wide uppercase text-text-muted flex items-center gap-1.5">
+              <i className="fas fa-scale-unbalanced-flip text-[0.6rem] opacity-60" />
+              Qty aktual
+              <span style={{ color: "var(--coffee-latte)" }}>*</span>
+            </span>
+            <span
+              className="text-[0.68rem] font-medium tracking-wide uppercase text-text-muted"
+              style={{ color: errors.condition ? "#f87171" : undefined }}
             >
-              <button
-                onClick={() =>
-                  setForm((p) => ({
-                    ...p,
-                    qty: Math.max(0, +(p.qty - 0.5).toFixed(1)),
-                  }))
-                }
-                className="w-9 h-9 rounded-md flex items-center justify-center text-lg font-light border shrink-0"
-                style={{
-                  background: "var(--bg-elevated)",
-                  borderColor: "var(--border-default)",
-                  color: "var(--coffee-latte)",
-                }}
-              >
-                −
-              </button>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={form.qty}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    qty: Math.max(0, parseFloat(e.target.value) || 0),
-                  }))
-                }
-                className="font-mono text-[1.1rem] font-semibold text-center flex-1 h-9"
-                style={{ ...inputBase, padding: "0 8px" }}
-              />
-              <button
-                onClick={() =>
-                  setForm((p) => ({ ...p, qty: +(p.qty + 0.5).toFixed(1) }))
-                }
-                className="w-9 h-9 rounded-md flex items-center justify-center text-lg font-light border shrink-0"
-                style={{
-                  background: "var(--bg-elevated)",
-                  borderColor: "var(--border-default)",
-                  color: "var(--coffee-latte)",
-                }}
-              >
-                +
-              </button>
-              <span className="font-mono text-[0.7rem] text-text-muted tracking-[0.08em] shrink-0">
-                KG
-              </span>
-            </div>
-            {errors.qty && (
-              <p
-                className="font-mono text-[0.7rem] mt-1"
-                style={{ color: "#f87171" }}
-              >
-                {errors.qty}
-              </p>
-            )}
+              Kondisi
+              <span style={{ color: "var(--coffee-latte)" }}> *</span>
+            </span>
           </div>
 
-          {/* Kondisi */}
-          <div>
-            <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
-              Kondisi ampas{" "}
-              <span style={{ color: "var(--coffee-latte)" }}>*</span>
-            </label>
-            {/* Fix #2 — shake saat kondisi belum dipilih setelah submit pertama */}
+          {/* Row body — qty kiri, kondisi kanan */}
+          <div className="flex" style={{ minHeight: "120px" }}>
+            {/* ── Qty stepper (item 3.1 + 3.2) ── */}
             <div
-              className="flex gap-2 h-9"
-              style={{
-                animation:
-                  shakeField === "condition" ? "shake 0.45s ease" : "none",
-              }}
+              className="flex-1 flex flex-col items-center justify-center px-3 py-3 gap-2"
+              style={{ minWidth: 0 }}
             >
-              {(["basah", "kering", "mix"] as ConditionType[]).map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setForm((p) => ({ ...p, condition: c }))}
-                  className="flex-1 rounded-md text-[0.75rem] font-mono tracking-[0.04em] border capitalize transition-all duration-150"
-                  style={{
-                    background:
-                      form.condition === c
-                        ? "rgba(122,171,126,0.12)"
-                        : "var(--bg-elevated)",
-                    borderColor:
-                      form.condition === c
-                        ? "rgba(122,171,126,0.4)"
-                        : "var(--border-strong)",
-                    color:
-                      form.condition === c
-                        ? "var(--forest-sage)"
-                        : "var(--text-muted)",
-                  }}
-                >
-                  {c}
-                </button>
-              ))}
+              {/* Baris stepper utama: − [nilai] + */}
+              <div className="flex items-center gap-2 w-full">
+                {/* Tombol − dengan long-press (item 3.2) */}
+                <StepButton
+                  dir={-1}
+                  onStep={(delta) =>
+                    // Fix 3 — lower 0, upper 999 kg
+                    setForm((p) => ({
+                      ...p,
+                      qty: Math.min(
+                        999,
+                        Math.max(0, +(p.qty + delta).toFixed(1)),
+                      ),
+                    }))
+                  }
+                />
+                {/* Input nilai */}
+                <div className="flex-1 flex flex-col items-center">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.qty}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        // Fix 3 — clamp input manual: 0–999 kg
+                        qty: Math.min(
+                          999,
+                          Math.max(0, parseFloat(e.target.value) || 0),
+                        ),
+                      }))
+                    }
+                    className="font-mono font-semibold text-center w-full"
+                    style={{
+                      ...inputBase,
+                      fontSize: "1.4rem",
+                      padding: "2px 4px",
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      color: errors.qty ? "#f87171" : "var(--text-primary)",
+                    }}
+                    aria-label="Kuantitas dalam kg"
+                  />
+                  <span className="font-mono text-[0.62rem] text-text-muted tracking-[0.1em] uppercase -mt-1">
+                    kg
+                  </span>
+                </div>
+                {/* Tombol + dengan long-press (item 3.2) */}
+                <StepButton
+                  dir={1}
+                  onStep={(delta) =>
+                    // Fix 3 — upper 999 kg agar tidak overflow saat long-press
+                    setForm((p) => ({
+                      ...p,
+                      qty: Math.min(999, +(p.qty + delta).toFixed(1)),
+                    }))
+                  }
+                />
+              </div>
+              {/* Estimasi comparison */}
+              {stop.estimated_kg > 0 && (
+                <p className="text-[0.65rem] text-text-muted text-center opacity-70">
+                  estimasi ~{stop.estimated_kg} kg
+                  {form.qty > 0 && form.qty !== stop.estimated_kg && (
+                    <span
+                      className="ml-1"
+                      style={{
+                        color:
+                          form.qty > stop.estimated_kg
+                            ? "var(--forest-sage)"
+                            : "var(--coffee-latte)",
+                      }}
+                    >
+                      ({form.qty > stop.estimated_kg ? "+" : ""}
+                      {(form.qty - stop.estimated_kg).toFixed(1)})
+                    </span>
+                  )}
+                </p>
+              )}
+              {errors.qty && (
+                <p className="text-[0.7rem]" style={{ color: "#f87171" }}>
+                  {errors.qty}
+                </p>
+              )}
             </div>
-            {errors.condition && (
-              <p
-                className="font-mono text-[0.7rem] mt-1"
-                style={{ color: "#f87171" }}
-              >
-                {errors.condition}
-              </p>
-            )}
+
+            {/* Divider vertikal */}
+            <div
+              className="w-px self-stretch my-2"
+              style={{ background: "var(--border-subtle)" }}
+            />
+
+            {/* ── Kondisi (item 3.1) ── */}
+            <div
+              className="flex-1 flex flex-col justify-center gap-1.5 px-3 py-3"
+              style={{ minWidth: 0 }}
+            >
+              {(() => {
+                const conditionMap: Record<
+                  ConditionType,
+                  { icon: string; label: string }
+                > = {
+                  basah: { icon: "fa-droplet", label: "Basah" },
+                  kering: { icon: "fa-sun", label: "Kering" },
+                  mix: { icon: "fa-shuffle", label: "Mix" },
+                };
+                return (["basah", "kering", "mix"] as ConditionType[]).map(
+                  (c) => {
+                    const { icon, label } = conditionMap[c];
+                    const isSelected = form.condition === c;
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => setForm((p) => ({ ...p, condition: c }))}
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-md border text-left transition-all duration-150 active:scale-[0.97]"
+                        style={{
+                          background: isSelected
+                            ? "rgba(122,171,126,0.12)"
+                            : "transparent",
+                          borderColor: isSelected
+                            ? "rgba(122,171,126,0.45)"
+                            : "var(--border-subtle)",
+                          color: isSelected
+                            ? "var(--forest-sage)"
+                            : "var(--text-muted)",
+                        }}
+                        aria-pressed={isSelected}
+                      >
+                        <i
+                          className={`fas ${icon} text-[0.75rem]`}
+                          style={{
+                            opacity: isSelected ? 1 : 0.5,
+                            width: "14px",
+                            textAlign: "center",
+                          }}
+                        />
+                        <span className="text-[0.78rem] font-medium">
+                          {label}
+                        </span>
+                        {isSelected && (
+                          <i className="fas fa-check text-[0.6rem] ml-auto opacity-80" />
+                        )}
+                      </button>
+                    );
+                  },
+                );
+              })()}
+              {errors.condition && (
+                <p className="text-[0.68rem]" style={{ color: "#f87171" }}>
+                  {errors.condition}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Foto dokumentasi */}
+        {/* Sesi 2 item 2.3 — Foto upload compact inline row */}
         <div>
-          <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
-            Foto dokumentasi
-          </label>
           <input
             ref={photoRef}
             type="file"
@@ -759,140 +984,246 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
             className="hidden"
             onChange={handlePhotoChange}
           />
-          {!form.photoPreview ? (
-            <button
-              onClick={() => photoRef.current?.click()}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-md border border-dashed transition-all duration-150 hover:border-coffee-latte"
-              style={{
-                background: "rgba(196,149,106,0.02)",
-                borderColor: "var(--border-default)",
-              }}
-            >
-              <span
-                className="w-8 h-8 rounded-md flex items-center justify-center text-sm shrink-0"
-                style={{
-                  background: "rgba(196,149,106,0.1)",
-                  color: "var(--coffee-latte)",
-                }}
-              >
-                <i className="fas fa-camera" />
-              </span>
-              <span className="text-left">
-                <span className="block text-[0.82rem] text-text-secondary">
-                  Ambil foto / pilih dari galeri
-                </span>
-                <span className="block font-mono text-[0.65rem] text-text-muted mt-0.5">
-                  JPG · PNG · maks 5 MB
-                </span>
-              </span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={form.photoPreview}
-                alt="Preview foto"
-                className="w-16 h-16 rounded-md object-cover"
-                style={{ border: "1px solid var(--border-strong)" }}
-              />
-              <div>
-                <p className="text-[0.82rem] text-text-secondary">
-                  {form.photo?.name}
-                </p>
-                <button
-                  onClick={() => photoRef.current?.click()}
-                  className="font-mono text-[0.65rem] mt-1 transition-colors"
-                  style={{ color: "var(--coffee-latte)" }}
-                >
-                  Ganti foto →
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Lokasi */}
-        <div>
-          <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
-            Lokasi saat ini
-          </label>
           <div
             className="flex items-center gap-3 px-3 py-2.5 rounded-md"
             style={{
-              background: "rgba(122,171,126,0.05)",
-              border: "1px solid rgba(122,171,126,0.18)",
+              background: "var(--bg-elevated)",
+              border: `1px solid ${form.photoPreview ? "rgba(122,171,126,0.3)" : "var(--border-default)"}`,
+              transition: "border-color 0.2s ease",
             }}
           >
-            {/* Fix #4 — ikon berubah sesuai state */}
-            <i
-              className={`fas fa-${locLoading ? "circle-notch fa-spin" : "location-dot"} text-sm shrink-0`}
-              style={{
-                color: locLoading
-                  ? "var(--text-muted)"
-                  : gpsError
-                    ? gpsError.type === "permission"
-                      ? "#f87171"
-                      : "var(--coffee-latte)"
-                    : "var(--forest-sage)",
-              }}
-            />
-            {locLoading ? (
-              <span className="font-mono text-[0.75rem] text-text-muted animate-pulse flex-1">
-                Mendeteksi lokasi...
-              </span>
-            ) : gpsError ? (
-              <div className="flex-1 min-w-0">
-                <span
-                  className="font-mono text-[0.72rem] block"
-                  style={{
-                    color:
-                      gpsError.type === "permission"
-                        ? "#f87171"
-                        : "var(--coffee-latte)",
-                  }}
-                >
-                  {gpsError.msg}
-                </span>
-                {gpsError.type === "permission" && (
-                  <span className="font-mono text-[0.62rem] text-text-muted block mt-0.5">
-                    Pengaturan → Privasi → Lokasi → Browser
-                  </span>
-                )}
-              </div>
-            ) : form.locationCoords ? (
-              <>
-                <span
-                  className="font-mono text-[0.75rem] flex-1"
-                  style={{ color: "var(--forest-sage)" }}
-                >
-                  {form.locationCoords}
-                </span>
-                <span className="font-mono text-[0.65rem] text-text-muted shrink-0">
-                  ±{form.locationAccuracy}m
-                </span>
-              </>
+            {/* Thumbnail atau ikon kamera */}
+            {form.photoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={form.photoPreview}
+                alt="Preview foto"
+                className="w-10 h-10 rounded-md object-cover shrink-0"
+                style={{ border: "1px solid var(--border-strong)" }}
+              />
             ) : (
-              <span className="font-mono text-[0.75rem] text-text-muted flex-1">
-                Menunggu GPS...
+              <span
+                className="w-10 h-10 rounded-md flex items-center justify-center shrink-0"
+                style={{
+                  background: "rgba(196,149,106,0.08)",
+                  border: "1px dashed rgba(196,149,106,0.3)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <i className="fas fa-camera text-sm" />
               </span>
             )}
+
+            {/* Info teks */}
+            <div className="flex-1 min-w-0">
+              {form.photoPreview ? (
+                <>
+                  <p
+                    className="text-[0.8rem] font-medium truncate"
+                    style={{ color: "var(--forest-sage)" }}
+                  >
+                    <i className="fas fa-check text-[0.65rem] mr-1.5" />
+                    Foto tersimpan
+                  </p>
+                  <p className="text-[0.68rem] text-text-muted truncate mt-0.5 opacity-70">
+                    {form.photo?.name ?? "foto.jpg"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[0.8rem] text-text-secondary">
+                    Foto dokumentasi
+                  </p>
+                  <p className="text-[0.68rem] text-text-muted opacity-70">
+                    Opsional · JPG / PNG · maks 5 MB
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* Tombol aksi — compact */}
+            <button
+              onClick={() => photoRef.current?.click()}
+              className="shrink-0 text-[0.72rem] font-medium px-3 py-1.5 rounded-md border transition-all duration-150 active:scale-95"
+              style={{
+                background: form.photoPreview
+                  ? "rgba(122,171,126,0.08)"
+                  : "rgba(196,149,106,0.08)",
+                color: form.photoPreview
+                  ? "var(--forest-sage)"
+                  : "var(--coffee-latte)",
+                borderColor: form.photoPreview
+                  ? "rgba(122,171,126,0.25)"
+                  : "rgba(196,149,106,0.25)",
+              }}
+            >
+              {form.photoPreview ? "Ganti" : "Ambil foto"}
+            </button>
+          </div>
+        </div>
+
+        {/*
+          Sesi 4 (revised) — GPS Mini Map via react-leaflet
+          MiniMap di-load dengan next/dynamic (ssr:false).
+          Wrapper div tetap handle semua state.
+        */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[0.72rem] font-medium tracking-wide uppercase text-text-muted">
+              Lokasi saat ini
+            </label>
             <button
               onClick={captureGPS}
-              className="font-mono text-[0.65rem] shrink-0 transition-colors hover:opacity-70"
+              className="flex items-center gap-1 text-[0.68rem] transition-opacity hover:opacity-70 active:scale-95"
               style={{ color: "var(--coffee-latte)" }}
-              title="Coba lagi deteksi lokasi"
               aria-label="Refresh lokasi GPS"
             >
-              <i className="fas fa-rotate-right" />
+              <i
+                className={`fas fa-rotate-right text-[0.6rem] ${locLoading ? "fa-spin" : ""}`}
+              />
+              <span>{locLoading ? "Mendeteksi..." : "Refresh"}</span>
             </button>
+          </div>
+
+          <div
+            className="rounded-lg overflow-hidden"
+            style={{
+              border: `1px solid ${
+                gpsError
+                  ? gpsError.type === "permission"
+                    ? "rgba(248,113,113,0.3)"
+                    : "rgba(196,149,106,0.3)"
+                  : form.locationCoords
+                    ? "rgba(122,171,126,0.3)"
+                    : "var(--border-default)"
+              }`,
+              background: "var(--bg-elevated)",
+            }}
+          >
+            {/* State 1 — Loading GPS */}
+            {locLoading && (
+              <div
+                className="h-[180px] flex flex-col items-center justify-center gap-2 animate-pulse"
+                style={{ background: "var(--bg-card)" }}
+              >
+                <i
+                  className="fas fa-location-dot text-[1.2rem]"
+                  style={{ color: "var(--border-strong)" }}
+                />
+                <span className="text-[0.72rem] text-text-muted">
+                  Mendeteksi lokasi GPS...
+                </span>
+              </div>
+            )}
+
+            {/* State 2 — Error spesifik */}
+            {!locLoading && gpsError && (
+              <div className="px-4 py-4 flex items-start gap-3">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                  style={{
+                    background:
+                      gpsError.type === "permission"
+                        ? "rgba(248,113,113,0.1)"
+                        : "rgba(196,149,106,0.1)",
+                  }}
+                >
+                  <i
+                    className="fas fa-location-dot-slash text-sm"
+                    style={{
+                      color:
+                        gpsError.type === "permission"
+                          ? "#f87171"
+                          : "var(--coffee-latte)",
+                    }}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p
+                    className="text-[0.8rem] font-medium"
+                    style={{
+                      color:
+                        gpsError.type === "permission"
+                          ? "#f87171"
+                          : "var(--coffee-latte)",
+                    }}
+                  >
+                    {gpsError.msg}
+                  </p>
+                  {gpsError.type === "permission" && (
+                    <p className="text-[0.7rem] text-text-muted mt-1 leading-relaxed">
+                      Pengaturan HP → Privasi → Lokasi → aktifkan untuk browser
+                    </p>
+                  )}
+                  {gpsError.type === "timeout" && (
+                    <p className="text-[0.7rem] text-text-muted mt-1">
+                      Coba pindah ke area terbuka dan tap Refresh.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* State 3 — Berhasil: peta interaktif Leaflet */}
+            {!locLoading &&
+              !gpsError &&
+              form.locationCoords &&
+              (() => {
+                const [lat, lng] = form.locationCoords
+                  .split(",")
+                  .map((s) => parseFloat(s.trim()));
+                return (
+                  <div>
+                    <MiniMap
+                      lat={lat}
+                      lng={lng}
+                      accuracy={form.locationAccuracy ?? 0}
+                    />
+                    {/* Info bar bawah */}
+                    <div
+                      className="flex items-center justify-between px-3 py-2"
+                      style={{ borderTop: "1px solid var(--border-subtle)" }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <i
+                          className="fas fa-circle-check text-[0.7rem]"
+                          style={{ color: "var(--forest-sage)" }}
+                        />
+                        <span
+                          className="text-[0.72rem]"
+                          style={{ color: "var(--forest-sage)" }}
+                        >
+                          Lokasi terdeteksi
+                        </span>
+                      </div>
+                      <span className="font-mono text-[0.62rem] text-text-muted">
+                        {form.locationCoords}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+            {/* State 0 — Belum ada coords */}
+            {!locLoading && !gpsError && !form.locationCoords && (
+              <div
+                className="h-[60px] flex items-center justify-center gap-2"
+                style={{ background: "var(--bg-card)" }}
+              >
+                <i className="fas fa-location-crosshairs text-[0.9rem] text-text-muted" />
+                <span className="text-[0.75rem] text-text-muted">
+                  Menunggu sinyal GPS...
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Catatan */}
         <div>
-          <label className="font-mono text-[0.62rem] tracking-[0.12em] uppercase text-text-muted mb-2 block">
+          <label className="text-[0.72rem] font-medium tracking-wide uppercase text-text-muted mb-2 block">
             Catatan{" "}
-            <span className="normal-case tracking-normal text-[0.65rem]">
+            <span className="normal-case tracking-normal text-[0.65rem] font-normal opacity-70">
               (opsional)
             </span>
           </label>
@@ -919,35 +1250,50 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
             {form.notes.length}/500
           </p>
         </div>
+      </div>
 
-        {/* Action buttons */}
-        <div
-          className="flex gap-2 pt-1 border-t"
-          style={{ borderColor: "var(--border-subtle)" }}
-        >
+      {/*
+        Sesi 2 item 2.1 — Sticky action bar
+        Selalu visible di bawah form terlepas dari posisi scroll.
+        Di-render di luar div scroll agar tidak ikut ter-scroll.
+        Pada mobile dengan keyboard terbuka, bar ini tetap di atas keyboard.
+      */}
+      <div
+        className="shrink-0 px-4 py-3 flex flex-col gap-2"
+        style={{
+          borderTop: "1px solid var(--border-subtle)",
+          background: "var(--bg-surface)",
+        }}
+      >
+        <div className="flex gap-2">
           <button
             onClick={handleSubmit}
-            className="flex-1 py-3 rounded-md text-[0.82rem] font-medium tracking-[0.03em] border flex items-center justify-center gap-2 transition-all duration-200 hover:-translate-y-0.5"
+            className="flex-1 py-3 rounded-md text-[0.85rem] font-semibold border flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98]"
             style={{
               background: "var(--forest-moss)",
               color: "var(--forest-mist)",
               borderColor: "rgba(122,171,126,0.3)",
             }}
           >
+            <i className="fas fa-check text-[0.8rem]" />
             {ctaLabel}
           </button>
           {/* REC 7 — tombol Lewati langsung buka QuickSkipSheet */}
           <button
             onClick={() => setShowSkipSheet(true)}
-            className="px-4 py-3 rounded-md text-[0.75rem] font-mono tracking-[0.06em] border text-text-muted hover:text-text-secondary transition-all duration-150"
-            style={{ borderColor: "var(--border-default)" }}
+            className="px-5 py-3 rounded-md text-[0.82rem] border transition-all duration-150 active:scale-[0.98]"
+            style={{
+              color: "var(--text-muted)",
+              borderColor: "var(--border-default)",
+              background: "var(--bg-elevated)",
+            }}
           >
             Lewati
           </button>
         </div>
-
-        <p className="font-mono text-[0.6rem] text-text-muted text-center -mt-1">
-          Draft tersimpan otomatis · GPS diambil saat form dibuka
+        {/* Footnote dipindah ke action bar agar selalu terlihat */}
+        <p className="text-[0.68rem] text-text-muted text-center opacity-60 leading-none">
+          Draft tersimpan otomatis · GPS aktif
         </p>
       </div>
 
@@ -960,7 +1306,10 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
           <QuickSkipSheet
             stopName={stop.mitra_name}
             onConfirm={(reason) => {
-              localStorage.removeItem(`rebru_draft_${stop.id}`);
+              // Fix 2 — SSR guard
+              if (typeof window !== "undefined") {
+                localStorage.removeItem(`rebru_draft_${stop.id}`);
+              }
               onSkip(reason);
               setShowSkipSheet(false);
             }}
@@ -1255,6 +1604,25 @@ export default function RouteSection({
     setUndoState(null);
   }
 
+  // Fix 4 — beforeunload: jika ada undoState pending dan collector tutup tab,
+  // langsung panggil onConfirm agar data tidak hilang.
+  // useRef untuk akses undoState terbaru tanpa dependency di event listener.
+  const undoStateRef = useRef(undoState);
+  useEffect(() => {
+    undoStateRef.current = undoState;
+  }, [undoState]);
+
+  useEffect(() => {
+    function handleBeforeUnload() {
+      if (undoStateRef.current) {
+        // Commit segera — tidak bisa async di beforeunload
+        undoStateRef.current.onConfirm();
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []); // mount sekali, akses state via ref
+
   const formattedDate = formatDisplayDate(routeDate, {
     weekday: true,
     longMonth: true,
@@ -1262,6 +1630,29 @@ export default function RouteSection({
 
   return (
     <div>
+      {/* Jalur 1 fix 2 — satu @keyframes terpusat, tidak duplikat per komponen */}
+      <style>{`
+        @keyframes bullet-pop {
+          0%   { transform: scale(1);    }
+          35%  { transform: scale(1.4);  }
+          65%  { transform: scale(0.88); }
+          100% { transform: scale(1);    }
+        }
+        @keyframes countdown {
+          from { width: 100%; }
+          to   { width: 0%;   }
+        }
+        @keyframes shake {
+          0%,  100% { transform: translateX(0);   }
+          15%       { transform: translateX(-5px); }
+          30%       { transform: translateX(5px);  }
+          45%       { transform: translateX(-4px); }
+          60%       { transform: translateX(4px);  }
+          75%       { transform: translateX(-2px); }
+          90%       { transform: translateX(2px);  }
+        }
+      `}</style>
+
       {/* Section header */}
       <div className="flex items-center gap-3 mb-5">
         <div

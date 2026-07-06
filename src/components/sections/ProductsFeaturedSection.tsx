@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { formatCurrency, cn, slugify } from "@/utils";
 import { useCart } from "@/context/CartContext";
 import { useToast } from "@/components/ui/Toast";
@@ -19,6 +20,60 @@ import type { UIProduct } from "@/types";
 // Match dengan transition-delay terlama di product-stage.css (controls: 320ms)
 // + sedikit buffer supaya animasi masuk tidak terpotong.
 const STAGE_TRANSITION_MS = 360;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProductImage — wrapper next/image dengan fallback otomatis ke icon.
+//
+// MASALAH YANG DIPERBAIKI:
+//   `imageUrl` bisa terisi path yang valid secara data (bukan null), tapi
+//   file di balik path itu belum diupload ke server (404). next/image tidak
+//   tahu ini sebelum browser benar-benar mencoba memuatnya — jadi kita perlu
+//   `onError` untuk "menurunkan" tampilan ke icon placeholder saat itu terjadi,
+//   alih-alih membiarkan ikon broken-image bawaan browser muncul.
+// ─────────────────────────────────────────────────────────────────────────────
+function ProductImage({
+  product,
+  fill,
+  sizes,
+  priority,
+  className,
+  iconClassName,
+  objectPosition,
+}: {
+  product: UIProduct;
+  fill: boolean;
+  sizes: string;
+  priority?: boolean;
+  className: string;
+  iconClassName: string;
+  objectPosition?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(product.imageUrl) && !failed;
+
+  if (!showImage) {
+    return (
+      <i
+        className={`fas ${product.icon ?? "fa-leaf"} ${iconClassName}`}
+        style={{ color: product.accent }}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <Image
+      src={product.imageUrl as string}
+      alt={product.name}
+      fill={fill}
+      sizes={sizes}
+      priority={priority}
+      className={className}
+      style={objectPosition ? { objectPosition } : undefined}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RailCard — kartu kecil mengambang di kanan-bawah stage, selector produk
@@ -47,10 +102,12 @@ function RailCard({
       }
     >
       <span className="product-rail-card-dot" aria-hidden="true" />
-      <i
-        className={`fas ${product.icon ?? "fa-leaf"} product-rail-card-icon`}
-        style={{ color: product.accent }}
-        aria-hidden="true"
+      <ProductImage
+        product={product}
+        fill
+        sizes="120px"
+        className="product-rail-card-img"
+        iconClassName="product-rail-card-icon"
       />
       <span className="product-rail-card-scrim" aria-hidden="true" />
       <span className="product-rail-card-label">{product.name}</span>
@@ -88,6 +145,33 @@ export default function ProductsFeaturedSection({ products }: Props) {
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants[0] ?? null,
   );
+  // Foto stage gagal dimuat (404 dsb) — reset ke false setiap ganti produk,
+  // supaya produk berikutnya dapat kesempatan baru untuk mencoba load foto.
+  const [stageImgFailed, setStageImgFailed] = useState(false);
+
+  // ── Fade indicator untuk scrollarea accordion ──
+  // Menggantikan auto-scroll: hanya sinyal visual pasif "masih ada konten
+  // di bawah", tanpa menggerakkan apa pun. Hilang otomatis saat sudah
+  // scroll ke posisi paling bawah (tidak ada lagi yang tersembunyi), dan
+  // tidak pernah muncul sama sekali jika konten tidak overflow.
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollFade, setShowScrollFade] = useState(false);
+
+  function checkScrollFade() {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const hasOverflow = el.scrollHeight > el.clientHeight + 1;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    setShowScrollFade(hasOverflow && !atBottom);
+  }
+
+  // Cek ulang setiap ganti produk / accordion dibuka-tutup (konten berubah
+  // tinggi). rAF dipakai supaya pengukuran terjadi setelah browser selesai
+  // re-layout, bukan di tengah transisi.
+  useEffect(() => {
+    const raf = requestAnimationFrame(checkScrollFade);
+    return () => cancelAnimationFrame(raf);
+  }, [currentIndex, isTransitioning]);
 
   // Reset state saat pindah produk + jalankan delay-choreography
   function handleGoTo(index: number) {
@@ -100,6 +184,7 @@ export default function ProductsFeaturedSection({ products }: Props) {
     transitionTimeout.current = setTimeout(() => {
       setSelectedVariant(next.variants[0] ?? null);
       setQty(1);
+      setStageImgFailed(false);
       goTo(index);
       setIsTransitioning(false);
     }, STAGE_TRANSITION_MS);
@@ -185,19 +270,34 @@ export default function ProductsFeaturedSection({ products }: Props) {
           data-transitioning={isTransitioning}
           style={{ transitionDelay: "160ms" }}
         >
-          {/* Layer 1 — background placeholder (icon besar + warna accent) */}
-          <div
-            className="product-stage-bg"
-            style={{
-              background: `radial-gradient(ellipse 60% 70% at 75% 50%, ${product.accentBg ?? "rgba(74,44,26,0.18)"} 0%, var(--coffee-mid) 100%)`,
-            }}
-          >
-            <i
-              className={`fas ${product.icon ?? "fa-leaf"} product-stage-bg-icon`}
-              style={{ color: product.accent }}
-              aria-hidden="true"
-            />
-          </div>
+          {/* Layer 1 — background: foto produk asli (jika ada & berhasil dimuat) atau placeholder icon */}
+          {product.imageUrl && !stageImgFailed ? (
+            <div className="product-stage-bg product-stage-bg--photo">
+              <Image
+                src={product.imageUrl}
+                alt={product.name}
+                fill
+                priority={currentIndex === 0}
+                sizes="(max-width: 1023px) 100vw, 70vw"
+                className="product-stage-bg-img"
+                style={{ objectPosition: "right center" }}
+                onError={() => setStageImgFailed(true)}
+              />
+            </div>
+          ) : (
+            <div
+              className="product-stage-bg"
+              style={{
+                background: `radial-gradient(ellipse 60% 70% at 75% 50%, ${product.accentBg ?? "rgba(74,44,26,0.18)"} 0%, var(--coffee-mid) 100%)`,
+              }}
+            >
+              <i
+                className={`fas ${product.icon ?? "fa-leaf"} product-stage-bg-icon`}
+                style={{ color: product.accent }}
+                aria-hidden="true"
+              />
+            </div>
+          )}
 
           {/* Layer 2 — scrim gradient (kiri + bawah) */}
           <div className="product-stage-scrim" aria-hidden="true" />
@@ -206,20 +306,6 @@ export default function ProductsFeaturedSection({ products }: Props) {
           <div className="product-stage-content">
             {/* ── Hero text (kiri-atas) ── */}
             <div className="product-stage-hero">
-              <p className="product-stage-eyebrow">
-                <span
-                  className="block w-7 h-px"
-                  style={{ background: product.accent }}
-                />
-                <span
-                  className="font-mono text-[0.65rem] tracking-[0.2em] uppercase"
-                  style={{ color: product.accent }}
-                >
-                  Per {product.unit ?? "unit"}
-                  {activePrice ? ` · ${formatCurrency(activePrice)}` : ""}
-                </span>
-              </p>
-
               <h2 className="product-stage-title">{product.name}</h2>
 
               {product.impact?.waste_saved && (
@@ -275,10 +361,148 @@ export default function ProductsFeaturedSection({ products }: Props) {
                   </div>
                 )}
 
-                {/* Qty + Add to Cart — split pill */}
+                {/* Berat Bersih — teks statis, tanpa dropdown (info terlalu singkat
+                    untuk perlu di-klik dulu) */}
+                {product.specs?.beratBersih && (
+                  <div className="mb-5">
+                    <p
+                      className="font-mono text-[0.62rem] tracking-[0.15em] uppercase mb-1.5"
+                      style={{ color: "rgba(245,239,230,0.55)" }}
+                    >
+                      Berat Bersih
+                    </p>
+                    <p
+                      className="text-[0.85rem]"
+                      style={{ color: "rgba(245,239,230,0.85)" }}
+                    >
+                      {product.specs.beratBersih}
+                    </p>
+                  </div>
+                )}
+
+                {/* Accordion — versi on-dark, dibungkus scroll container supaya
+                    konten panjang tidak mendorong tinggi stage & rail keluar batas.
+                    Wrapper di luar untuk posisi fade indicator (::after butuh
+                    parent relative agar tidak ikut ter-scroll bersama isi). */}
+                <div className="product-stage-scrollarea-wrap">
+                  <div
+                    ref={scrollAreaRef}
+                    className="product-stage-scrollarea"
+                    onScroll={checkScrollFade}
+                    onTransitionEndCapture={checkScrollFade}
+                  >
+                    <div className="accordion-on-stage">
+                      <AccordionItem title="Spesifikasi & Bahan">
+                        <div
+                          className="flex flex-col gap-2.5 text-[0.85rem]"
+                          style={{ color: "rgba(245,239,230,0.72)" }}
+                        >
+                          <p>
+                            <span style={{ color: "#f5efe6" }}>
+                              Bahan Utama:
+                            </span>{" "}
+                            {product.specs?.bahan}
+                          </p>
+                          {product.specs?.varian && (
+                            <p>
+                              <span style={{ color: "#f5efe6" }}>
+                                Opsi Varian:
+                              </span>{" "}
+                              {product.specs.varian}
+                            </p>
+                          )}
+                          {product.specs?.fitur &&
+                            product.specs.fitur.length > 0 && (
+                              <div>
+                                <p
+                                  className="mb-1.5"
+                                  style={{ color: "#f5efe6" }}
+                                >
+                                  Fitur:
+                                </p>
+                                <ul className="flex flex-col gap-1">
+                                  {product.specs.fitur.map((f) => (
+                                    <li
+                                      key={f}
+                                      className="flex items-start gap-2"
+                                    >
+                                      <span
+                                        className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                        style={{ background: product.accent }}
+                                      />
+                                      {f}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      </AccordionItem>
+
+                      {product.impact?.description && (
+                        <AccordionItem title="Dampak Lingkungan">
+                          <div className="flex flex-col gap-3">
+                            <p
+                              className="text-[0.85rem] leading-[1.75]"
+                              style={{ color: "rgba(245,239,230,0.72)" }}
+                            >
+                              {product.impact.description}
+                            </p>
+                            {product.impact.waste_saved && (
+                              <div
+                                className="flex items-center gap-3 px-3.5 py-2.5 rounded-md"
+                                style={{
+                                  background: "rgba(13,10,8,0.5)",
+                                  border: `1px solid ${product.accentBorder ?? "rgba(122,171,126,0.3)"}`,
+                                }}
+                              >
+                                <i
+                                  className={`fas ${product.impact.icon} text-[0.78rem]`}
+                                  style={{ color: product.accent }}
+                                />
+                                <p
+                                  className="text-[0.8rem]"
+                                  style={{ color: product.accent }}
+                                >
+                                  <strong>{product.impact.waste_saved}</strong>
+                                  <span
+                                    style={{ color: "rgba(245,239,230,0.65)" }}
+                                  >
+                                    {" "}
+                                    — setara dengan mengunci{" "}
+                                  </span>
+                                  <strong style={{ color: product.accent }}>
+                                    {product.impact.co2_locked}
+                                  </strong>
+                                  <span
+                                    style={{ color: "rgba(245,239,230,0.65)" }}
+                                  >
+                                    {" "}
+                                    dari atmosfer.
+                                  </span>
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </AccordionItem>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Fade indicator — sinyal pasif "masih ada konten di bawah".
+                      Tidak menggerakkan apa pun; murni visual, muncul/hilang
+                      berdasar posisi scroll aktual (lihat checkScrollFade). */}
+                  <div
+                    className="product-stage-scroll-fade"
+                    data-visible={showScrollFade}
+                    aria-hidden="true"
+                  />
+                </div>
+
+                {/* Qty + Add to Cart — split pill — paling bawah, setelah semua deskripsi */}
                 {product.variants.length > 0 && (
                   <div
-                    className="flex items-stretch rounded-pill overflow-hidden mb-1 transition-all duration-250"
+                    className="flex items-stretch rounded-pill overflow-hidden mt-6 transition-all duration-250"
                     style={{
                       border: `1.5px solid ${selectedVariant ? product.accent : "rgba(245,239,230,0.25)"}`,
                       opacity: selectedVariant ? 1 : 0.55,
@@ -361,121 +585,18 @@ export default function ProductsFeaturedSection({ products }: Props) {
                     </button>
                   </div>
                 )}
-
-                {/* Accordion — versi on-dark (lihat .accordion-on-stage di CSS) */}
-                <div className="accordion-on-stage">
-                  <AccordionItem title="Berat Bersih" defaultOpen>
-                    <p
-                      className="text-[0.85rem] leading-relaxed"
-                      style={{ color: "rgba(245,239,230,0.72)" }}
-                    >
-                      {product.specs?.beratBersih}
-                    </p>
-                  </AccordionItem>
-
-                  <AccordionItem title="Spesifikasi & Bahan">
-                    <div
-                      className="flex flex-col gap-2.5 text-[0.85rem]"
-                      style={{ color: "rgba(245,239,230,0.72)" }}
-                    >
-                      <p>
-                        <span style={{ color: "#f5efe6" }}>Bahan Utama:</span>{" "}
-                        {product.specs?.bahan}
-                      </p>
-                      {product.specs?.varian && (
-                        <p>
-                          <span style={{ color: "#f5efe6" }}>Opsi Varian:</span>{" "}
-                          {product.specs.varian}
-                        </p>
-                      )}
-                      {product.specs?.fitur &&
-                        product.specs.fitur.length > 0 && (
-                          <div>
-                            <p className="mb-1.5" style={{ color: "#f5efe6" }}>
-                              Fitur:
-                            </p>
-                            <ul className="flex flex-col gap-1">
-                              {product.specs.fitur.map((f) => (
-                                <li key={f} className="flex items-start gap-2">
-                                  <span
-                                    className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0"
-                                    style={{ background: product.accent }}
-                                  />
-                                  {f}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                    </div>
-                  </AccordionItem>
-
-                  {product.impact?.description && (
-                    <AccordionItem title="Dampak Lingkungan">
-                      <div className="flex flex-col gap-3">
-                        <p
-                          className="text-[0.85rem] leading-[1.75]"
-                          style={{ color: "rgba(245,239,230,0.72)" }}
-                        >
-                          {product.impact.description}
-                        </p>
-                        {product.impact.waste_saved && (
-                          <div
-                            className="flex items-center gap-3 px-3.5 py-2.5 rounded-md"
-                            style={{
-                              background: "rgba(13,10,8,0.5)",
-                              border: `1px solid ${product.accentBorder ?? "rgba(122,171,126,0.3)"}`,
-                            }}
-                          >
-                            <i
-                              className={`fas ${product.impact.icon} text-[0.78rem]`}
-                              style={{ color: product.accent }}
-                            />
-                            <p
-                              className="text-[0.8rem]"
-                              style={{ color: product.accent }}
-                            >
-                              <strong>{product.impact.waste_saved}</strong>
-                              <span style={{ color: "rgba(245,239,230,0.65)" }}>
-                                {" "}
-                                — setara dengan mengunci{" "}
-                              </span>
-                              <strong style={{ color: product.accent }}>
-                                {product.impact.co2_locked}
-                              </strong>
-                              <span style={{ color: "rgba(245,239,230,0.65)" }}>
-                                {" "}
-                                dari atmosfer.
-                              </span>
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </AccordionItem>
-                  )}
-                </div>
               </div>
 
               {/* ── Rail: arrows + card selector (kanan-bawah) ── */}
               <div className="product-rail-wrap">
-                <div className="product-rail-arrows">
-                  <button
-                    type="button"
-                    onClick={() => handleGoTo(currentIndex - 1)}
-                    aria-label="Produk sebelumnya"
-                    className="product-rail-arrow"
-                  >
-                    <i className="fas fa-chevron-up text-[0.65rem]" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGoTo(currentIndex + 1)}
-                    aria-label="Produk berikutnya"
-                    className="product-rail-arrow"
-                  >
-                    <i className="fas fa-chevron-down text-[0.65rem]" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleGoTo(currentIndex - 1)}
+                  aria-label="Produk sebelumnya"
+                  className="product-rail-arrow"
+                >
+                  <i className="fas fa-chevron-left text-[0.65rem]" />
+                </button>
 
                 <div className="product-rail-track">
                   {products.map((p, i) => (
@@ -487,6 +608,15 @@ export default function ProductsFeaturedSection({ products }: Props) {
                     />
                   ))}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleGoTo(currentIndex + 1)}
+                  aria-label="Produk berikutnya"
+                  className="product-rail-arrow"
+                >
+                  <i className="fas fa-chevron-right text-[0.65rem]" />
+                </button>
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 /* src/app/globals.css */
 
 @import "./products/product-stage.css";
+@import "../components/collector/LeafletMap.tsx";
 
 @tailwind base;
 @tailwind components;
