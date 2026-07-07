@@ -724,7 +724,7 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
   const nextStopOrder = nextStopName ? stop.order + 1 : null;
   const ctaLabel = nextStopOrder
     ? `Simpan & Lanjut ke Stop ${nextStopOrder} →`
-    : "Simpan & Selesaikan Rute ✓";
+    : "Simpan & Selesaikan Rute";
 
   return (
     <div

@@ -21,7 +21,13 @@ import OperationalSection from "@/components/dashboard/sections/OperationalSecti
 import BioConversionSection from "@/components/dashboard/sections/BioConversionSection";
 import EsgSection from "@/components/dashboard/sections/EsgSection";
 
-import { fetchTodayRoutes } from "@/lib/supabase-collector";
+import {
+  fetchTodayRoutes,
+  reconcileStaleStops,
+  fetchActivePartners,
+  fetchLatestStopsForPartners,
+} from "@/lib/supabase-collector";
+import { computeUrgentQueue } from "@/lib/scheduling";
 import {
   fetchPartnerApplications,
   computePartnerBadge,
@@ -458,7 +464,10 @@ export default function AdminDashboard() {
     try {
       const supabase = createClient();
 
-      // Badge Operasional: jumlah collector status alert hari ini
+      // Badge Operasional: alert collector macet hari ini + Urgent Queue
+      // FASE 3 — digabung jadi satu angka, pakai computeUrgentQueue() yang
+      // SAMA PERSIS dipakai OperationalSection.tsx (sumber kebenaran tunggal,
+      // tidak ada lagi kriteria "urgent" yang beda antara badge vs isi section).
       const routes = await fetchTodayRoutes();
       const alertCount = routes.filter((r: any) => {
         const lastDone = [...(r.stops ?? [])]
@@ -481,7 +490,14 @@ export default function AdminDashboard() {
         );
         return overdueStops.length > 0 && minsAgo > 75;
       }).length;
-      setBadgeOps(alertCount);
+
+      const activePartners = await fetchActivePartners();
+      const latestStops = await fetchLatestStopsForPartners(
+        activePartners.map((p) => p.id),
+      );
+      const urgentQueue = computeUrgentQueue(activePartners, latestStops);
+
+      setBadgeOps(alertCount + urgentQueue.length);
 
       // Badge Partner: pending + expiring ≤3 hari
       const partners = await fetchPartnerApplications();
@@ -497,7 +513,28 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    fetchBadges();
+    // FASE 2 — reconciliation skip implisit, dijalankan SEKALI saat dashboard
+    // dibuka (bukan tiap 60 detik — cukup sekali per sesi, idempotent kalau
+    // dipanggil ulang karena hanya menyentuh stop yang memang masih "pending"
+    // dan tanggalnya sudah lewat).
+    // finally → fetchBadges tetap jalan walau reconcile gagal, supaya badge
+    // tidak macet cuma karena reconciliation error.
+    async function initDashboard() {
+      try {
+        const { reconciledCount } = await reconcileStaleStops();
+        if (reconciledCount > 0) {
+          console.info(
+            `[reconcile] ${reconciledCount} stop otomatis ditandai "skipped" (melewati batas waktu).`,
+          );
+        }
+      } catch (err) {
+        console.error("reconcileStaleStops gagal:", err);
+      } finally {
+        fetchBadges();
+      }
+    }
+
+    initDashboard();
     const interval = setInterval(fetchBadges, 60_000);
     return () => clearInterval(interval);
   }, [fetchBadges]);

@@ -1435,7 +1435,7 @@ export default function PartnerSection() {
     setActionLoading(true);
     try {
       if (action.type === "approve") {
-        await approvePartner(
+        const result = await approvePartner(
           selected.id,
           session.name,
           action.activeFrom,
@@ -1455,12 +1455,24 @@ export default function PartnerSection() {
           prev.map((p) => (p.id === selected.id ? updated : p)),
         );
         setSelected(updated);
-        show(
-          action.activeUntil
-            ? `✓ ${selected.organization} diaktifkan hingga ${formatDateShort(action.activeUntil)}`
-            : `✓ ${selected.organization} diaktifkan — tidak berbatas`,
-          "success",
-        );
+
+        const activatedMsg = action.activeUntil
+          ? `✓ ${selected.organization} diaktifkan hingga ${formatDateShort(action.activeUntil)}`
+          : `✓ ${selected.organization} diaktifkan — tidak berbatas`;
+
+        if (result.scheduleGenerated) {
+          // FASE 4 — jadwal pertama otomatis terbuat, kabari admin sekalian
+          show(`${activatedMsg} · jadwal pertama otomatis dibuat`, "success");
+        } else {
+          // Approve tetap berhasil (partner sudah "active" di DB), tapi
+          // auto-generate gagal — admin WAJIB tahu supaya assign manual
+          // lewat Urgent Queue, bukan mengira semua sudah beres.
+          show(activatedMsg, "success");
+          show(
+            `⚠ Jadwal otomatis gagal dibuat untuk ${selected.organization} — silakan assign manual dari tab Operasional › Urgent Queue.`,
+            "error",
+          );
+        }
       } else if (action.type === "extend") {
         await extendPartner(selected.id, session.name, action.activeUntil);
         const updated: PartnerApplication = {

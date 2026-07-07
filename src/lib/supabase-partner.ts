@@ -1,6 +1,7 @@
 // src/lib/supabase-partner.ts
 
 import { createClient } from "@/lib/supabase/client";
+import { generateInitialStop } from "@/lib/supabase-collector";
 
 const supabase = createClient();
 
@@ -72,13 +73,19 @@ export async function updatePartnerStatus(
 }
 
 // Approve — sets status active + masa aktif + interval penjemputan
+// FASE 4: sekaligus auto-generate stop pertama sesuai active_from.
+//
+// Return value sengaja bukan void lagi — caller (PartnerSection.tsx) perlu
+// tahu apakah auto-generate berhasil atau tidak, supaya bisa kasih toast
+// yang jujur ke admin ("approve sukses, TAPI jadwal otomatis gagal — assign
+// manual dari Urgent Queue") alih-alih pura-pura semua baik-baik saja.
 export async function approvePartner(
   id: string,
   reviewedBy: string,
   activeFrom: string,
   activeUntil: string | null, // null = kontributor (tidak berbatas)
   pickupIntervalDays: number = 3, // default 3 hari jika tidak diisi
-): Promise<void> {
+): Promise<{ scheduleGenerated: boolean; scheduleError?: string }> {
   const { error } = await supabase
     .from("partner_applications")
     .update({
@@ -91,6 +98,24 @@ export async function approvePartner(
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+
+  // Approve DI DATABASE sudah berhasil di titik ini — apa pun yang terjadi
+  // di generateInitialStop() TIDAK BOLEH membuat approvePartner() throw,
+  // karena partner sudah terlanjur "active". Kegagalan cuma berarti admin
+  // perlu assign manual sekali lewat Urgent Queue.
+  try {
+    await generateInitialStop(id);
+    return { scheduleGenerated: true };
+  } catch (err: any) {
+    // console.warn (BUKAN console.error) sengaja dipilih — ini skenario yang
+    // MEMANG kita antisipasi (misal tidak ada collector aktif), sudah
+    // ditangani dengan baik lewat try/catch, dan sudah dikabari ke admin
+    // lewat toast di PartnerSection.tsx. console.error akan memicu overlay
+    // merah full-screen di Next.js dev mode untuk kasus yang sebetulnya
+    // tidak error sama sekali dari sisi aplikasi.
+    console.warn("[approvePartner] generateInitialStop gagal:", err?.message);
+    return { scheduleGenerated: false, scheduleError: err?.message };
+  }
 }
 
 // Perpanjang masa aktif (untuk expired / expiring)

@@ -22,8 +22,6 @@ import {
   formatDisplayDate,
   isTimeOverdue,
   addDays,
-  diffDays,
-  parseLocalDate,
   formatDate,
 } from "@/utils/date";
 
@@ -34,6 +32,7 @@ import {
   fetchTodayStops,
   fetchCollectorStats,
   fetchActivePartners,
+  fetchLatestStopsForPartners,
   createRouteWithStops,
   insertCollectorMember,
   fetchAllCollectors,
@@ -44,7 +43,9 @@ import {
   type RouteWithCollector,
   type ActivePartner,
   type CollectorMember,
+  type LatestStopInfo,
 } from "@/lib/supabase-collector";
+import { computeUrgentQueue } from "@/lib/scheduling";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local types
@@ -922,6 +923,9 @@ function ScheduleTab({
   const [showSuggest, setShowSuggest] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [activePartners, setActivePartners] = useState<ActivePartner[]>([]);
+  const [latestStops, setLatestStops] = useState<
+    Record<string, LatestStopInfo>
+  >({});
   const [collectors, setCollectors] = useState<CollectorMember[]>([]);
   const [selectedDate, setSelectedDate] = useState(todayWITA());
   const [selectedCollector, setSelectedCollector] = useState("");
@@ -941,24 +945,35 @@ function ScheduleTab({
       );
   }, []);
 
-  // Load activePartners saat mount — dibutuhkan Urgent Queue dan modal Slot Manual.
-  // Sebelumnya hanya di-fetch saat showModal, sehingga Urgent Queue selalu kosong.
-  useEffect(() => {
-    fetchActivePartners()
-      .then(setActivePartners)
-      .catch((err) =>
-        console.error("[ScheduleTab] fetchActivePartners:", err?.message),
+  // FASE 3 — helper tunggal: ambil activePartners + status stop terakhirnya
+  // sekaligus. Menggantikan 2 useEffect terpisah yang sebelumnya hanya
+  // fetch activePartners saja (Urgent Queue lama tidak pernah tahu status
+  // stop, cuma hitung dari last_pickup_date/active_from).
+  const refreshScheduleData = useCallback(async () => {
+    try {
+      const partners = await fetchActivePartners();
+      setActivePartners(partners);
+      const stops = await fetchLatestStopsForPartners(
+        partners.map((p) => p.id),
       );
+      setLatestStops(stops);
+    } catch (err: any) {
+      console.error("[ScheduleTab] refreshScheduleData:", err?.message);
+    }
   }, []);
 
-  // Refresh activePartners saat modal Slot Manual ditutup (setelah add stop)
-  // agar last_pickup_date yang baru terupdate terefleksi di Urgent Queue
+  // Load saat mount — dibutuhkan Urgent Queue dan modal Slot Manual.
+  useEffect(() => {
+    refreshScheduleData();
+  }, [refreshScheduleData]);
+
+  // Refresh saat modal Slot Manual ditutup (setelah admin assign pickup)
+  // agar Urgent Queue langsung tahu partner ini sudah punya stop pending
+  // terjadwal — inilah fix untuk bug "assign tidak menghilangkan urgent".
   useEffect(() => {
     if (showModal) return;
-    fetchActivePartners()
-      .then(setActivePartners)
-      .catch(() => {});
-  }, [showModal]);
+    refreshScheduleData();
+  }, [showModal, refreshScheduleData]);
 
   async function handleAddStop() {
     if (!selectedPartner || !selectedCollector) return;
@@ -1527,36 +1542,12 @@ function ScheduleTab({
 
         {/* Urgent queue panel — live data */}
         {(() => {
-          const todayStr = todayWITA();
-          const todayMs = parseLocalDate(todayStr).getTime();
+          // FASE 3 — definisi "urgent" sekarang SATU-SATUNYA sumber kebenaran
+          // di computeUrgentQueue() (scheduling.ts), dipakai juga oleh badge
+          // sidebar AdminDashboard. Tidak ada lagi logic tanggal duplikat di sini.
+          const urgentQueue = computeUrgentQueue(activePartners, latestStops);
 
-          // Hitung due date per partner:
-          // - Sudah pernah dijemput: last_pickup_date + interval
-          // - Belum pernah dijemput: active_from + interval (jika active_from ada)
-          // - Tidak ada referensi tanggal sama sekali: skip (tidak cukup data)
-          const urgentPartners = activePartners
-            .filter((p) => p.pickup_interval_days > 0)
-            .filter((p) => {
-              const baseDate = p.last_pickup_date ?? p.active_from ?? null;
-              if (!baseDate) return false;
-              const dueMs = parseLocalDate(
-                addDays(baseDate.slice(0, 10), p.pickup_interval_days),
-              ).getTime();
-              return dueMs < todayMs; // due date sudah lewat
-            })
-            .sort((a, b) => {
-              // Sort: paling lama overdue duluan
-              const getDueMs = (p: typeof a) => {
-                const base = p.last_pickup_date ?? p.active_from ?? todayStr;
-                return parseLocalDate(
-                  addDays(base.slice(0, 10), p.pickup_interval_days),
-                ).getTime();
-              };
-              return getDueMs(a) - getDueMs(b);
-            });
-
-          if (urgentPartners.length === 0 && collectors.length === 0)
-            return null;
+          if (urgentQueue.length === 0 && collectors.length === 0) return null;
 
           return (
             <div
@@ -1573,17 +1564,17 @@ function ScheduleTab({
                   className="text-[11px] font-medium"
                   style={{
                     color:
-                      urgentPartners.length > 0
+                      urgentQueue.length > 0
                         ? "var(--color-error)"
                         : "var(--text-muted)",
                   }}
                 >
                   <i
-                    className={`fas ${urgentPartners.length > 0 ? "fa-exclamation-triangle" : "fa-check-circle"} text-[9px] mr-1`}
+                    className={`fas ${urgentQueue.length > 0 ? "fa-exclamation-triangle" : "fa-check-circle"} text-[9px] mr-1`}
                   />
                   Urgent
                 </span>
-                {urgentPartners.length > 0 && (
+                {urgentQueue.length > 0 && (
                   <span
                     className="text-[10px] px-1.5 py-px rounded-full"
                     style={{
@@ -1592,12 +1583,12 @@ function ScheduleTab({
                       border: "0.5px solid rgba(160,72,72,0.4)",
                     }}
                   >
-                    {urgentPartners.length}
+                    {urgentQueue.length}
                   </span>
                 )}
               </div>
 
-              {urgentPartners.length === 0 && (
+              {urgentQueue.length === 0 && (
                 <div className="py-4 text-center mb-3">
                   <i
                     className="fas fa-calendar-check text-lg mb-1 block"
@@ -1612,13 +1603,17 @@ function ScheduleTab({
                 </div>
               )}
 
-              {urgentPartners.slice(0, 3).map((p) => {
-                const base = p.last_pickup_date ?? p.active_from ?? todayStr;
-                const dueDateStr = addDays(
-                  base.slice(0, 10),
-                  p.pickup_interval_days,
-                );
-                const overdueDays = diffDays(todayStr, dueDateStr);
+              {urgentQueue.slice(0, 3).map(({ partner: p, urgent }) => {
+                // Label beda tergantung alasan urgent — supaya admin langsung
+                // tahu ini "belum sempat dijadwalkan" vs "sudah dijadwalkan
+                // tapi di-skip" (dua konteks berbeda yang butuh respons beda).
+                const label =
+                  urgent.reason === "skipped"
+                    ? `Di-skip · ${urgent.overdueDays}d lalu`
+                    : urgent.reason === "stale_pending"
+                      ? `Terlewat (belum diproses) · ${urgent.overdueDays}d`
+                      : `Overdue ${urgent.overdueDays}d`;
+
                 return (
                   <div
                     key={p.id}
@@ -1641,7 +1636,7 @@ function ScheduleTab({
                       className="text-[10px] font-medium mb-2"
                       style={{ color: "var(--color-error)" }}
                     >
-                      Overdue {overdueDays}d
+                      {label}
                     </p>
                     <button
                       className="w-full py-1.5 rounded text-[10px] transition-all"
