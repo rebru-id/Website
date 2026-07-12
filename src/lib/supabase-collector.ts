@@ -426,62 +426,20 @@ export async function fetchCollectorStats(): Promise<
 }
 
 /**
- * Generate Order Number berikutnya secara otomatis.
+ * PERBAIKAN — order_number TIDAK lagi digenerate di sini (JS).
  *
- * Format  : "RBR.{nomor}/{bulan romawi}/{tahun}"
- * Contoh  : "RBR.0288/VII/2026"
+ * Sebelumnya: generateOrderNumber() dipanggil di sini setiap stop baru
+ * dibuat — rawan race condition ("SELECT max lalu +1" di JS, bukan atomik),
+ * dan nomor tetap terbit meski stop akhirnya di-skip (bukan transaksi
+ * valid).
  *
- * Cara kerja:
- *   1. Ambil order_number terbesar dari DB (ORDER BY nomor urut DESC LIMIT 1)
- *   2. Parse nomor urutnya → increment → format ulang
- *   3. Jika DB kosong (belum ada data), mulai dari 0001
- *
- * Dipanggil oleh createRouteWithStops() setiap kali stop baru dibuat,
- * baik dari admin (ScheduleTab) maupun auto-generate (generateNextStop).
+ * Sekarang: order_number dibiarkan NULL saat stop dijadwalkan. Nomor
+ * BARU diterbitkan otomatis oleh trigger Postgres
+ * (assign_order_number(), lihat migrasi order-number-sequence-fix.sql)
+ * tepat saat status berubah menjadi "done" — atomik via SEQUENCE,
+ * berlaku dari sesi mana pun (collector maupun admin) tanpa perlu
+ * duplikasi logic di banyak tempat.
  */
-async function generateOrderNumber(
-  client: SupabaseClient = supabase,
-): Promise<string> {
-  const ROMAN_MONTHS = [
-    "I",
-    "II",
-    "III",
-    "IV",
-    "V",
-    "VI",
-    "VII",
-    "VIII",
-    "IX",
-    "X",
-    "XI",
-    "XII",
-  ];
-
-  // Ambil order_number terakhir — sort descending by nomor urut
-  // Format selalu "RBR.XXXX/..." jadi bisa sort as text karena zero-padded
-  const { data } = await client
-    .from("collection_stops")
-    .select("order_number")
-    .not("order_number", "is", null)
-    .order("order_number", { ascending: false })
-    .limit(1);
-
-  let nextNum = 1;
-  if (data && data.length > 0 && data[0].order_number) {
-    // Parse nomor dari "RBR.0287/VII/2026" → 287
-    const match = data[0].order_number.match(/^RBR\.(\d+)\//);
-    if (match) {
-      nextNum = parseInt(match[1], 10) + 1;
-    }
-  }
-
-  const now = new Date();
-  const month = ROMAN_MONTHS[now.getMonth()]; // getMonth() 0-indexed
-  const year = now.getFullYear();
-  const num = String(nextNum).padStart(4, "0"); // "0288"
-
-  return `RBR.${num}/${month}/${year}`;
-}
 
 /**
  * ScheduleTab — admin membuat stop baru (dari modal "Slot manual").
@@ -552,10 +510,13 @@ export async function createRouteWithStops(
       ? existingStops[0].stop_order + 1
       : 1;
 
+  // 3. Insert stops dengan stop_order — order_number SENGAJA tidak diisi
+  //    di sini (dibiarkan NULL). Nomor baru diterbitkan otomatis oleh
+  //    trigger Postgres saat status berubah jadi "done" — lihat
+  //    assign_order_number() di migrasi order-number-sequence-fix.sql.
   const stopsToInsert = [];
   for (let i = 0; i < payload.stops.length; i++) {
     const s = payload.stops[i];
-    const orderNumber = await generateOrderNumber(client);
     stopsToInsert.push({
       route_id: routeId,
       partner_id: s.partner_id,
@@ -563,7 +524,6 @@ export async function createRouteWithStops(
       scheduled_time: s.scheduled_time,
       estimated_kg: s.estimated_kg,
       status: "pending",
-      order_number: orderNumber,
     });
   }
 
