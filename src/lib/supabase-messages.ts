@@ -71,6 +71,23 @@ export async function countUnreadMessages(): Promise<number> {
   return count ?? 0;
 }
 
+// countMessagesInRange
+// ─────────────────────────────────────────────────────────────────────────────
+// FASE 4.2 — dipakai untuk indikator tren "Pesan Masuk" di Overview.
+export async function countMessagesInRange(
+  startDateISO: string,
+  endDateISO: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("contact_messages")
+    .select("*", { count: "exact", head: true })
+    .gte("submitted_at", startDateISO)
+    .lt("submitted_at", endDateISO);
+
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
 // updateMessageStatus
 // ─────────────────────────────────────────────────────────────────────────────
 // Mengubah status satu pesan berdasarkan id.

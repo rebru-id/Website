@@ -37,6 +37,7 @@ import {
   toWeeklyBars,
 } from "@/utils/collector-adapters";
 import { todayWITA } from "@/utils/date";
+import { reportError } from "@/lib/report-error";
 import type { RouteStop, WasteLog, WeeklyBar } from "@/types/collector";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ export default function CollectorPage() {
       setRouteStops(stops);
     } catch (err: any) {
       const msg = err?.message ?? err?.error_description ?? JSON.stringify(err);
-      console.error("CollectorPage: gagal memuat rute:", msg);
+      reportError("CollectorPage.loadRoute", err);
       setRouteError(
         `Gagal memuat rute: ${msg || "Periksa koneksi dan coba refresh."}`,
       );
@@ -287,7 +288,7 @@ export default function CollectorPage() {
       setWeeklyData(bars.length > 0 ? bars : DEFAULT_WEEKLY_BARS);
     } catch (err: any) {
       const msg = err?.message ?? err?.error_description ?? JSON.stringify(err);
-      console.error("CollectorPage: gagal memuat history:", msg);
+      reportError("CollectorPage.loadHistory", err);
       setHistoryError("Gagal memuat riwayat. Data rute tetap tersedia.");
     } finally {
       setHistoryLoading(false);
@@ -333,7 +334,11 @@ export default function CollectorPage() {
           photoUrl = await uploadStopPhoto(committed.photo_file, committed.id);
         } catch (uploadErr) {
           // Upload gagal tidak memblock submit — stop tetap tersimpan tanpa foto
-          console.warn("[handleCommitStop] upload foto gagal:", uploadErr);
+          reportError(
+            "CollectorPage.handleCommitStop.uploadPhoto",
+            uploadErr,
+            "warn",
+          );
         }
       }
 
@@ -351,7 +356,7 @@ export default function CollectorPage() {
       try {
         await updateStopStatus(committed.id, payload);
       } catch (err: any) {
-        console.error("Gagal menyimpan status stop:", err);
+        reportError("CollectorPage.handleCommitStop.updateStopStatus", err);
         // REC 1 — toast error; undo window sudah expired, tidak bisa rollback UI
         showToast("Gagal menyimpan ke server. Coba refresh halaman.", "error");
       }

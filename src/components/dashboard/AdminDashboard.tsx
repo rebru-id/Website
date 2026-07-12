@@ -27,7 +27,7 @@ import {
   fetchActivePartners,
   fetchLatestStopsForPartners,
 } from "@/lib/supabase-collector";
-import { computeUrgentQueue } from "@/lib/scheduling";
+import { computeUrgentQueue, getCollectorAlerts } from "@/lib/scheduling";
 import {
   fetchPartnerApplications,
   computePartnerBadge,
@@ -35,6 +35,7 @@ import {
 import OverviewSection from "@/components/dashboard/sections/OverviewSection";
 import { countUnreadMessages } from "@/lib/supabase-messages";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/report-error";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -465,31 +466,13 @@ export default function AdminDashboard() {
       const supabase = createClient();
 
       // Badge Operasional: alert collector macet hari ini + Urgent Queue
-      // FASE 3 — digabung jadi satu angka, pakai computeUrgentQueue() yang
-      // SAMA PERSIS dipakai OperationalSection.tsx (sumber kebenaran tunggal,
-      // tidak ada lagi kriteria "urgent" yang beda antara badge vs isi section).
+      // FASE 1.3 — alertCount TIDAK lagi dihitung inline di sini. Logic-nya
+      // dipindah ke getCollectorAlerts() di scheduling.ts, SATU-SATUNYA
+      // tempat yang mendefinisikan "collector alert" — dipakai juga oleh
+      // OverviewSection.tsx. Kalau kriteria alert berubah, cukup ubah di
+      // scheduling.ts, tidak perlu ubah dua tempat lagi.
       const routes = await fetchTodayRoutes();
-      const alertCount = routes.filter((r: any) => {
-        const lastDone = [...(r.stops ?? [])]
-          .filter((s: any) => s.status !== "pending")
-          .sort((a: any, b: any) =>
-            (b.completed_at ?? "").localeCompare(a.completed_at ?? ""),
-          )[0];
-        const minsAgo = lastDone?.completed_at
-          ? Math.floor(
-              (Date.now() - new Date(lastDone.completed_at).getTime()) / 60_000,
-            )
-          : r.stops_done === 0
-            ? 999
-            : 0;
-        const overdueStops = (r.stops ?? []).filter(
-          (s: any) =>
-            s.status === "pending" &&
-            s.scheduled_time &&
-            s.scheduled_time < new Date().toTimeString().slice(0, 5),
-        );
-        return overdueStops.length > 0 && minsAgo > 75;
-      }).length;
+      const collectorAlerts = getCollectorAlerts(routes);
 
       const activePartners = await fetchActivePartners();
       const latestStops = await fetchLatestStopsForPartners(
@@ -497,7 +480,7 @@ export default function AdminDashboard() {
       );
       const urgentQueue = computeUrgentQueue(activePartners, latestStops);
 
-      setBadgeOps(alertCount + urgentQueue.length);
+      setBadgeOps(collectorAlerts.length + urgentQueue.length);
 
       // Badge Partner: pending + expiring ≤3 hari
       const partners = await fetchPartnerApplications();
@@ -508,7 +491,7 @@ export default function AdminDashboard() {
       const unreadCount = await countUnreadMessages();
       setBadgePesan(unreadCount);
     } catch (err) {
-      console.error("fetchBadges gagal:", err);
+      reportError("AdminDashboard.fetchBadges", err);
     }
   }, []);
 
@@ -528,7 +511,7 @@ export default function AdminDashboard() {
           );
         }
       } catch (err) {
-        console.error("reconcileStaleStops gagal:", err);
+        reportError("AdminDashboard.reconcileStaleStops", err);
       } finally {
         fetchBadges();
       }

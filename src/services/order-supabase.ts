@@ -18,6 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { reportError } from "@/lib/report-error";
 import type { CartItem } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ export async function insertOrder(
     });
 
     if (orderError) {
-      console.error("[order-supabase] insert orders:", orderError.message);
+      reportError("order-supabase.insertOrder.orders", orderError);
       return { orderId: null, error: new Error(orderError.message) };
     }
 
@@ -99,13 +100,13 @@ export async function insertOrder(
       .insert(orderItems);
 
     if (itemsError) {
-      console.error("[order-supabase] insert order_items:", itemsError.message);
+      reportError("order-supabase.insertOrder.order_items", itemsError);
       return { orderId, error: new Error(itemsError.message) };
     }
 
     return { orderId, error: null };
   } catch (err) {
-    console.error("[order-supabase] unexpected error:", err);
+    reportError("order-supabase.insertOrder.unexpected", err);
     return {
       orderId: null,
       error: err instanceof Error ? err : new Error("Unknown error"),

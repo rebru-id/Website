@@ -45,7 +45,9 @@ import {
   type CollectorMember,
   type LatestStopInfo,
 } from "@/lib/supabase-collector";
+
 import { computeUrgentQueue } from "@/lib/scheduling";
+import { reportError } from "@/lib/report-error";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local types
@@ -941,7 +943,7 @@ function ScheduleTab({
     fetchAllCollectors()
       .then((cols) => setCollectors(cols))
       .catch((err) =>
-        console.error("[ScheduleTab] fetchAllCollectors:", err?.message),
+        reportError("OperationalSection.ScheduleTab.fetchAllCollectors", err),
       );
   }, []);
 
@@ -958,7 +960,7 @@ function ScheduleTab({
       );
       setLatestStops(stops);
     } catch (err: any) {
-      console.error("[ScheduleTab] refreshScheduleData:", err?.message);
+      reportError("OperationalSection.refreshScheduleData", err);
     }
   }, []);
 
@@ -999,7 +1001,7 @@ function ScheduleTab({
       onRefreshWeek();
     } catch (err: any) {
       const msg = err?.message ?? JSON.stringify(err);
-      console.error("Gagal tambah stop:", msg);
+      reportError("OperationalSection.handleAddStop", err);
       setSaveError(msg || "Terjadi kesalahan, coba lagi.");
     } finally {
       setSaving(false);
@@ -3203,7 +3205,7 @@ function TeamTab({
       const logs = await fetchCollectorHistory7Days(m.id);
       setRiwayatLogs(logs);
     } catch (err: any) {
-      console.error("fetchCollectorHistory7Days:", err?.message);
+      reportError("OperationalSection.openRiwayat", err);
     } finally {
       setRiwayatLoading(false);
     }
@@ -3224,7 +3226,7 @@ function TeamTab({
       setConfirmAction(null);
       onMemberAdded?.(); // refresh list
     } catch (err: any) {
-      console.error("handleConfirmAction:", err?.message);
+      reportError("OperationalSection.handleConfirmAction", err);
     } finally {
       setActionLoading(false);
     }
@@ -4111,7 +4113,7 @@ export default function OperationalSection() {
   const loadWeekRoutes = useCallback((start: string) => {
     fetchWeekRoutes(start)
       .then(setWeekRoutes)
-      .catch((err) => console.error("[fetchWeekRoutes]", err?.message));
+      .catch((err) => reportError("OperationalSection.loadWeekRoutes", err));
   }, []);
 
   // ── KPI dihitung dari data live ────────────────────────────────────────────
@@ -4149,10 +4151,7 @@ export default function OperationalSection() {
   useEffect(() => {
     const safe = <T,>(p: Promise<T>, label: string, fallback: T): Promise<T> =>
       p.catch((err) => {
-        console.error(
-          `[OperationalSection] ${label} gagal:`,
-          err?.message ?? err,
-        );
+        reportError(`OperationalSection.${label}`, err);
         return fallback;
       });
 
@@ -4206,7 +4205,7 @@ export default function OperationalSection() {
         );
         setWeekStops(ws as any);
       })
-      .catch(console.error);
+      .catch((err) => reportError("OperationalSection.tabRefresh", err));
   }, [activeTab]);
 
   return (
@@ -4323,7 +4322,7 @@ export default function OperationalSection() {
             fetchCollectorStats()
               .then(setTeamStats)
               .catch((err) =>
-                console.error("Refresh team gagal:", err?.message ?? err),
+                reportError("OperationalSection.TeamTab.onMemberAdded", err),
               )
           }
           onGoToSchedule={(_collectorId) => {

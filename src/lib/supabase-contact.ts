@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { reportError } from "@/lib/report-error";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase client — lazy singleton + hardcode fallback
@@ -100,7 +101,7 @@ export async function fetchKotaList(): Promise<LokasiOption[]> {
     .order("nama");
 
   if (error) {
-    console.error("[supabase-contact] fetchKotaList:", error.message);
+    reportError("supabase-contact.fetchKotaList", error, "warn");
     return [];
   }
 
@@ -124,7 +125,7 @@ export async function fetchKecamatanByKota(
     .order("nama");
 
   if (error) {
-    console.error("[supabase-contact] fetchKecamatanByKota:", error.message);
+    reportError("supabase-contact.fetchKecamatanByKota", error, "warn");
     return [];
   }
 
@@ -149,10 +150,7 @@ export async function fetchKelurahanByKecamatan(
     .order("nama");
 
   if (error) {
-    console.error(
-      "[supabase-contact] fetchKelurahanByKecamatan:",
-      error.message,
-    );
+    reportError("supabase-contact.fetchKelurahanByKecamatan", error, "warn");
     return [];
   }
 
@@ -236,7 +234,7 @@ export async function getProducts() {
     .eq("is_active", true)
     .order("sort_order");
   if (error) {
-    console.error("[supabase-contact] getProducts:", error.message);
+    reportError("supabase-contact.getProducts", error, "warn");
     return [];
   }
   return data;
@@ -249,7 +247,10 @@ export async function getFeaturedProducts() {
     .eq("is_active", true)
     .eq("is_featured", true)
     .order("sort_order");
-  if (error) return [];
+  if (error) {
+    reportError("supabase-contact.getFeaturedProducts", error, "warn");
+    return [];
+  }
   return data;
 }
 
@@ -260,7 +261,7 @@ export async function getPackages() {
     .eq("is_active", true)
     .order("sort_order");
   if (error) {
-    console.error("[supabase-contact] getPackages:", error.message);
+    reportError("supabase-contact.getPackages", error, "warn");
     return [];
   }
   return data;

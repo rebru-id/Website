@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { reportError } from "@/lib/report-error";
 
 /* ─── Supabase client — anon key, insert-only via RLS ───────────────────────
  * Menggunakan NEXT_PUBLIC_ prefix agar tersedia di client component.
@@ -121,10 +122,7 @@ export default function InvestorDeckModal({
       });
 
     if (supabaseError) {
-      console.error(
-        "[InvestorDeckModal] Supabase insert error:",
-        supabaseError,
-      );
+      reportError("InvestorDeckModal.handleSubmit", supabaseError);
       setState("error");
       return;
     }

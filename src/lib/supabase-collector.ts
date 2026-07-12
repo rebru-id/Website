@@ -15,6 +15,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient } from "./supabase/client";
+import { reportError } from "./report-error";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   todayWITA,
   getMondayWITA,
@@ -193,8 +195,9 @@ export async function fetchWeekRoutes(
  */
 export async function fetchRoutesForDate(
   date: string,
+  client: SupabaseClient = supabase,
 ): Promise<RouteWithCollector[]> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("collection_routes")
     .select(
       `
@@ -374,11 +377,7 @@ export async function fetchCollectorStats(): Promise<
     .order("name");
 
   if (mErr) {
-    console.error(
-      "[fetchCollectorStats] members query error:",
-      mErr.message,
-      mErr,
-    );
+    reportError("supabase-collector.fetchCollectorStats.members", mErr);
     throw mErr;
   }
 
@@ -440,7 +439,9 @@ export async function fetchCollectorStats(): Promise<
  * Dipanggil oleh createRouteWithStops() setiap kali stop baru dibuat,
  * baik dari admin (ScheduleTab) maupun auto-generate (generateNextStop).
  */
-async function generateOrderNumber(): Promise<string> {
+async function generateOrderNumber(
+  client: SupabaseClient = supabase,
+): Promise<string> {
   const ROMAN_MONTHS = [
     "I",
     "II",
@@ -458,7 +459,7 @@ async function generateOrderNumber(): Promise<string> {
 
   // Ambil order_number terakhir — sort descending by nomor urut
   // Format selalu "RBR.XXXX/..." jadi bisa sort as text karena zero-padded
-  const { data } = await supabase
+  const { data } = await client
     .from("collection_stops")
     .select("order_number")
     .not("order_number", "is", null)
@@ -486,19 +487,22 @@ async function generateOrderNumber(): Promise<string> {
  * ScheduleTab — admin membuat stop baru (dari modal "Slot manual").
  * partnerIds dipilih dari fetchActivePartners() dropdown.
  */
-export async function createRouteWithStops(payload: {
-  collector_id: string;
-  route_date: string;
-  stops: {
-    partner_id: string;
-    stop_order: number;
-    scheduled_time: string;
-    estimated_kg: number | null;
-  }[];
-}): Promise<string> {
+export async function createRouteWithStops(
+  payload: {
+    collector_id: string;
+    route_date: string;
+    stops: {
+      partner_id: string;
+      stop_order: number;
+      scheduled_time: string;
+      estimated_kg: number | null;
+    }[];
+  },
+  client: SupabaseClient = supabase,
+): Promise<string> {
   // 1. Cek apakah sudah ada route untuk collector + tanggal ini
   //    (unique constraint: collector_id + route_date)
-  const { data: existing } = await supabase
+  const { data: existing } = await client
     .from("collection_routes")
     .select("id, total_planned_kg")
     .eq("collector_id", payload.collector_id)
@@ -508,19 +512,17 @@ export async function createRouteWithStops(payload: {
   let routeId: string;
 
   if (existing) {
-    // Route sudah ada → pakai ID yang ada, update total_planned_kg
     routeId = existing.id;
     const addedKg = payload.stops.reduce(
       (sum, s) => sum + (s.estimated_kg ?? 0),
       0,
     );
-    await supabase
+    await client
       .from("collection_routes")
       .update({ total_planned_kg: (existing.total_planned_kg ?? 0) + addedKg })
       .eq("id", routeId);
   } else {
-    // Route belum ada → buat baru
-    const { data: route, error: rErr } = await supabase
+    const { data: route, error: rErr } = await client
       .from("collection_routes")
       .insert({
         collector_id: payload.collector_id,
@@ -538,9 +540,7 @@ export async function createRouteWithStops(payload: {
     routeId = route.id;
   }
 
-  // 2. Hitung stop_order berikutnya di route ini
-  //    agar tidak tabrakan dengan stop yang sudah ada
-  const { data: existingStops } = await supabase
+  const { data: existingStops } = await client
     .from("collection_stops")
     .select("stop_order")
     .eq("route_id", routeId)
@@ -552,13 +552,10 @@ export async function createRouteWithStops(payload: {
       ? existingStops[0].stop_order + 1
       : 1;
 
-  // 3. Insert stops dengan stop_order + order_number yang benar
-  //    generateOrderNumber() dipanggil per stop agar nomor urut selalu increment
-  //    bahkan jika ada beberapa stop diinsert sekaligus dalam satu batch
   const stopsToInsert = [];
   for (let i = 0; i < payload.stops.length; i++) {
     const s = payload.stops[i];
-    const orderNumber = await generateOrderNumber();
+    const orderNumber = await generateOrderNumber(client);
     stopsToInsert.push({
       route_id: routeId,
       partner_id: s.partner_id,
@@ -570,7 +567,7 @@ export async function createRouteWithStops(payload: {
     });
   }
 
-  const { error: sErr } = await supabase
+  const { error: sErr } = await client
     .from("collection_stops")
     .insert(stopsToInsert);
 
@@ -672,10 +669,11 @@ export async function reconcileStaleStops(): Promise<{
  */
 export async function fetchLatestStopsForPartners(
   partnerIds: string[],
+  client: SupabaseClient = supabase,
 ): Promise<Record<string, LatestStopInfo>> {
   if (partnerIds.length === 0) return {};
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("collection_stops")
     .select("partner_id, status, collection_routes(route_date)")
     .in("partner_id", partnerIds);
@@ -699,22 +697,15 @@ export async function fetchLatestStopsForPartners(
   return latestByPartner;
 }
 
-/**
- * FASE 4/5 — helper BERSAMA: pilih collector lalu buat satu route+stop di
- * tanggal target. Dipakai oleh generateInitialStop() (Fase 4, lastCollectorId
- * selalu null — belum ada siklus sebelumnya) dan generateNextStop() (Fase 5,
- * lastCollectorId = collector yang baru saja menyelesaikan siklus ini).
- *
- * Tidak di-export — murni detail implementasi internal file ini.
- */
 async function generateStopForPartner(
   partnerId: string,
   kecamatanNama: string | null,
   targetDate: string,
   lastCollectorId: string | null,
+  client: SupabaseClient = supabase,
 ): Promise<void> {
-  const collectors = await fetchAllCollectors();
-  const routesOnTargetDate = await fetchRoutesForDate(targetDate);
+  const collectors = await fetchAllCollectors(client);
+  const routesOnTargetDate = await fetchRoutesForDate(targetDate, client);
   const suggestion = pickCollectorForPartner(
     { kecamatan_nama: kecamatanNama },
     collectors,
@@ -728,18 +719,21 @@ async function generateStopForPartner(
     );
   }
 
-  await createRouteWithStops({
-    collector_id: suggestion.collector.id,
-    route_date: targetDate,
-    stops: [
-      {
-        partner_id: partnerId,
-        stop_order: 1,
-        scheduled_time: DEFAULT_AUTO_SCHEDULED_TIME,
-        estimated_kg: null,
-      },
-    ],
-  });
+  await createRouteWithStops(
+    {
+      collector_id: suggestion.collector.id,
+      route_date: targetDate,
+      stops: [
+        {
+          partner_id: partnerId,
+          stop_order: 1,
+          scheduled_time: DEFAULT_AUTO_SCHEDULED_TIME,
+          estimated_kg: null,
+        },
+      ],
+    },
+    client,
+  );
 }
 
 /**
@@ -813,13 +807,14 @@ export async function generateNextStop(
   partnerId: string,
   completionDate: string,
   lastCollectorId: string | null,
+  client: SupabaseClient = supabase,
 ): Promise<void> {
-  const latestMap = await fetchLatestStopsForPartners([partnerId]);
+  const latestMap = await fetchLatestStopsForPartners([partnerId], client);
   if (latestMap[partnerId]?.status === "pending") {
     return;
   }
 
-  const { data: partner, error: pErr } = await supabase
+  const { data: partner, error: pErr } = await client
     .from("partner_applications")
     .select("id, kecamatan_nama, pickup_interval_days, status")
     .eq("id", partnerId)
@@ -839,10 +834,14 @@ export async function generateNextStop(
     partner.kecamatan_nama,
     targetDate,
     lastCollectorId,
+    client,
   );
 }
 
-export async function verifyStop(stopId: string): Promise<void> {
+export async function verifyStop(
+  stopId: string,
+  client: SupabaseClient = supabase,
+): Promise<void> {
   // Verifikasi hanya mengubah status dari "done" ke "verified" jika diperlukan
   // Untuk sekarang, stop yang sudah "done" dianggap valid — tidak ada perubahan state.
   // Fungsi ini bisa diisi logic verifikasi lebih lanjut di Sprint 5.
@@ -944,9 +943,10 @@ export async function updateStopStatus(
   // konsep yang disepakati: skip menghentikan siklus otomatis.
   if (payload.status === "done") {
     handleStopCompletedInBackground(stopId).catch((err) =>
-      console.warn(
-        "[updateStopStatus] proses lanjutan (auto-generate) gagal:",
-        err?.message,
+      reportError(
+        "supabase-collector.updateStopStatus.background",
+        err,
+        "warn",
       ),
     );
   }
@@ -973,9 +973,10 @@ async function handleStopCompletedInBackground(stopId: string): Promise<void> {
     .single();
 
   if (sErr || !stop?.partner_id) {
-    console.warn(
-      "[handleStopCompletedInBackground] tidak bisa ambil partner_id:",
-      sErr?.message,
+    reportError(
+      "supabase-collector.handleStopCompletedInBackground.getPartnerId",
+      sErr ?? new Error("partner_id tidak ditemukan"),
+      "warn",
     );
     return;
   }
@@ -988,9 +989,10 @@ async function handleStopCompletedInBackground(stopId: string): Promise<void> {
     .eq("id", stop.partner_id);
 
   if (pErr) {
-    console.warn(
-      "[handleStopCompletedInBackground] last_pickup_date update gagal:",
-      pErr.message,
+    reportError(
+      "supabase-collector.handleStopCompletedInBackground.updateLastPickupDate",
+      pErr,
+      "warn",
     );
     return; // jangan lanjut generate stop berikutnya kalau ini gagal
   }
@@ -1005,7 +1007,32 @@ async function handleStopCompletedInBackground(stopId: string): Promise<void> {
     lastCollectorId = route?.collector_id ?? null;
   }
 
-  await generateNextStop(stop.partner_id, today, lastCollectorId);
+  try {
+    const res = await fetch("/api/collector/generate-next-stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        partnerId: stop.partner_id,
+        completionDate: today,
+        lastCollectorId,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      reportError(
+        "supabase-collector.handleStopCompletedInBackground.generateNextStop",
+        new Error(body?.error ?? `HTTP ${res.status}`),
+        "warn",
+      );
+    }
+  } catch (err) {
+    reportError(
+      "supabase-collector.handleStopCompletedInBackground.generateNextStop",
+      err,
+      "warn",
+    );
+  }
 }
 
 /**
@@ -1219,14 +1246,16 @@ export async function insertCollectorMember(payload: {
 /**
  * TeamTab — ambil semua collector (aktif + inaktif) untuk dropdown.
  */
-export async function fetchAllCollectors(): Promise<CollectorMember[]> {
-  const { data, error } = await supabase
+export async function fetchAllCollectors(
+  client: SupabaseClient = supabase,
+): Promise<CollectorMember[]> {
+  const { data, error } = await client
     .from("collector_team")
     .select("id, name, email, area, truck_plate, initials, status")
     .order("name");
 
   if (error) {
-    console.error("[fetchAllCollectors] error:", error.message, error);
+    reportError("supabase-collector.fetchAllCollectors", error);
     throw error;
   }
   return (data ?? []) as CollectorMember[];

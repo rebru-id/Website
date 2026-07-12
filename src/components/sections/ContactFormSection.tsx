@@ -53,6 +53,8 @@ import {
   type LokasiOption,
 } from "@/lib/supabase-contact";
 
+import { reportError } from "@/lib/report-error";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -620,7 +622,7 @@ function PartnershipForm({
       if (error) throw error;
       setSubmitted(true);
     } catch (err) {
-      console.error("[PartnershipForm] submit error:", err);
+      reportError("ContactFormSection.PartnershipForm.handleSubmit", err);
       setSubmitError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setLoading(false);
@@ -1179,7 +1181,7 @@ function GeneralContactForm({ onBack }: { onBack: () => void }) {
       if (error) throw error;
       setSubmitted(true);
     } catch (err) {
-      console.error("[GeneralContactForm] submit error:", err);
+      reportError("ContactFormSection.GeneralContactForm.handleSubmit", err);
       setSubmitError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setLoading(false);

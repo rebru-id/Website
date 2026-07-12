@@ -135,7 +135,11 @@ export function isPartnerUrgent(
   // ── Kasus 1: stop terakhir "skipped" ──────────────────────────────────────
   if (latestStop?.status === "skipped") {
     const overdueDays = diffDays(todayStr, latestStop.routeDate);
-    return { urgent: true, reason: "skipped", overdueDays: Math.max(overdueDays, 0) };
+    return {
+      urgent: true,
+      reason: "skipped",
+      overdueDays: Math.max(overdueDays, 0),
+    };
   }
 
   // ── Kasus 2: stop terakhir "pending" ──────────────────────────────────────
@@ -224,7 +228,9 @@ export function pickCollectorForPartner(
   if (kec) {
     const byArea =
       activeCollectors.find((c) => c.area && normalize(c.area).includes(kec)) ??
-      activeCollectors.find((c) => c.area && kec.includes(normalize(c.area ?? "")));
+      activeCollectors.find(
+        (c) => c.area && kec.includes(normalize(c.area ?? "")),
+      );
     if (byArea) {
       return {
         collector: byArea,
@@ -243,13 +249,17 @@ export function pickCollectorForPartner(
   );
 
   const leastLoaded = [...activeCollectors].sort(
-    (a, b) => (stopCountByCollector[a.id] ?? 0) - (stopCountByCollector[b.id] ?? 0),
+    (a, b) =>
+      (stopCountByCollector[a.id] ?? 0) - (stopCountByCollector[b.id] ?? 0),
   )[0];
 
   const count = stopCountByCollector[leastLoaded.id] ?? 0;
   return {
     collector: leastLoaded,
-    reason: count === 0 ? "load ringan (0 stop hari ini)" : `load ringan (${count} stop hari ini)`,
+    reason:
+      count === 0
+        ? "load ringan (0 stop hari ini)"
+        : `load ringan (${count} stop hari ini)`,
     priority: 3,
   };
 }
@@ -289,4 +299,150 @@ export function computeUrgentQueue(
     }))
     .filter((item) => item.urgent.urgent)
     .sort((a, b) => (b.urgent.overdueDays ?? 0) - (a.urgent.overdueDays ?? 0));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Dashboard Alerts — FASE 1.3
+//
+// SEBELUM refactor ini, logic "collector alert" (stop overdue + tidak ada
+// check-in > toleransi menit) diduplikasi PERSIS di dua tempat:
+//   - AdminDashboard.tsx  → fetchBadges() → badgeOps
+//   - OverviewSection.tsx → loadData()    → alertCount
+//
+// Sekarang keduanya WAJIB memanggil getCollectorAlerts() di bawah ini.
+// Kalau definisi "collector alert" berubah di masa depan, cukup ubah di sini.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AlertCategory = "partner" | "collector" | "pesan";
+
+export type DashboardAlert = {
+  category: AlertCategory;
+  /**
+   * Dipakai untuk sorting lintas-kategori (makin besar makin urgent).
+   * Skala berbeda per kategori SENGAJA dibuat tidak setara secara default
+   * (lihat buildDashboardAlerts) — partner overdue diberi bobot dasar lebih
+   * tinggi daripada collector macet. Ini KEPUTUSAN PRODUK sementara, bukan
+   * fakta teknis — sesuaikan bobotnya kalau prioritas bisnis berubah.
+   */
+  severity: number;
+  title: string;
+  detail: string;
+  navigateTo: "operasional" | "partner" | "pesan";
+  /** Untuk React key + dedup — id partner/route/pesan asal alert ini */
+  sourceId: string;
+};
+
+/**
+ * Deteksi collector yang "macet": ada stop pending yang sudah lewat jadwal,
+ * DAN tidak ada check-in (stop selesai/skip) dalam `toleranceMinutes` menit
+ * terakhir.
+ *
+ * Pure function — tidak fetch apa pun, terima hasil fetchTodayRoutes() dari
+ * pemanggil (AdminDashboard atau OverviewSection), supaya tidak ada network
+ * call ganda untuk data yang sama.
+ *
+ * @param routes            hasil fetchTodayRoutes()
+ * @param toleranceMinutes  menit sejak check-in terakhir sebelum dianggap
+ *                          alert. Default 75 — SAMA dengan nilai lama yang
+ *                          sebelumnya hardcoded terpisah di dua file.
+ */
+export function getCollectorAlerts(
+  routes: RouteWithCollector[],
+  toleranceMinutes = 75,
+): DashboardAlert[] {
+  const nowStr = new Date().toTimeString().slice(0, 5);
+
+  return routes
+    .map((route): DashboardAlert | null => {
+      const overdueStops = (route.stops ?? []).filter(
+        (s) =>
+          s.status === "pending" &&
+          s.scheduled_time &&
+          s.scheduled_time < nowStr,
+      );
+
+      if (overdueStops.length === 0) return null;
+
+      const lastDone = [...(route.stops ?? [])]
+        .filter((s) => s.status !== "pending")
+        .sort((a, b) =>
+          (b.completed_at ?? "").localeCompare(a.completed_at ?? ""),
+        )[0];
+
+      const minsAgo = lastDone?.completed_at
+        ? Math.floor(
+            (Date.now() - new Date(lastDone.completed_at).getTime()) / 60_000,
+          )
+        : route.stops_done === 0
+          ? 999 // belum ada satu pun stop selesai hari ini
+          : 0;
+
+      if (minsAgo <= toleranceMinutes) return null;
+
+      return {
+        category: "collector",
+        severity: minsAgo,
+        title: `${route.collector?.name ?? "Collector"} — ${overdueStops.length} stop terlambat`,
+        detail:
+          minsAgo >= 999
+            ? "Belum ada check-in hari ini"
+            : `Tidak ada check-in sejak ${minsAgo} menit lalu`,
+        navigateTo: "operasional",
+        sourceId: route.id,
+      };
+    })
+    .filter((a): a is DashboardAlert => a !== null);
+}
+
+/**
+ * Gabungkan seluruh sumber alert dashboard (partner urgent + collector macet
+ * + pesan unread) jadi satu daftar terurut (severity tertinggi dulu).
+ *
+ * Dipakai OverviewSection untuk kartu ringkas "Perlu Perhatian" (Fase 1.2).
+ * Pesan unread SENGAJA diringkas jadi SATU alert (bukan per-pesan) — beda
+ * kebutuhan dari partner/collector yang butuh detail per-item untuk
+ * ditindaklanjuti satu-satu.
+ */
+export function buildDashboardAlerts(params: {
+  urgentPartners: UrgentQueueItem[];
+  collectorAlerts: DashboardAlert[];
+  unreadMessageCount: number;
+}): DashboardAlert[] {
+  const { urgentPartners, collectorAlerts, unreadMessageCount } = params;
+
+  // Bobot dasar +100 untuk partner: keputusan produk sementara supaya
+  // partner overdue tampil di atas collector macet pada severity yang
+  // sebanding. Revisit kalau prioritas bisnis berubah (lihat catatan tipe
+  // DashboardAlert di atas).
+  const partnerAlerts: DashboardAlert[] = urgentPartners.map((item) => ({
+    category: "partner",
+    severity: (item.urgent.overdueDays ?? 0) + 100,
+    title: `${item.partner.organization} — ${
+      item.urgent.reason === "skipped" ? "pickup di-skip" : "overdue pickup"
+    }`,
+    detail:
+      item.urgent.overdueDays != null
+        ? `${item.urgent.overdueDays} hari sejak jatuh tempo`
+        : "Perlu ditinjau",
+    navigateTo: "partner",
+    sourceId: item.partner.id,
+  }));
+
+  const messageAlert: DashboardAlert[] =
+    unreadMessageCount > 0
+      ? [
+          {
+            category: "pesan",
+            severity: unreadMessageCount,
+            title: `${unreadMessageCount} pesan belum dibaca`,
+            detail: "Klik untuk membuka Pesan Masuk",
+            navigateTo: "pesan",
+            sourceId: "unread-messages",
+          },
+        ]
+      : [];
+
+  return [...partnerAlerts, ...collectorAlerts, ...messageAlert].sort(
+    (a, b) => b.severity - a.severity,
+  );
 }

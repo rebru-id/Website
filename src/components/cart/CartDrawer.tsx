@@ -8,6 +8,7 @@ import { useCart } from "@/context/CartContext";
 import { useToast } from "@/components/ui/Toast";
 import { buildCartMessage, buildWhatsAppOrderURL } from "@/services/order";
 import { insertOrder, type OrderSource } from "@/services/order-supabase";
+import { reportError } from "@/lib/report-error";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skeleton — placeholder saat data loading (Sprint 4: pass isLoading dari hook)
@@ -300,7 +301,7 @@ export default function CartDrawer({ isLoading = false }: CartDrawerProps) {
     // Insert ke Supabase di background — tidak blokir redirect WA
     // Jika gagal: hanya di-log, user tidak terpengaruh
     insertOrder(items, grandTotal, source).catch((err) => {
-      console.error("[CartDrawer] insertOrder silently failed:", err);
+      reportError("CartDrawer.handleCheckout.insertOrder", err, "warn");
     });
 
     // Buka WhatsApp segera (tidak menunggu Supabase)

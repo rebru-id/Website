@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { generateInitialStop } from "@/lib/supabase-collector";
+import { reportError } from "@/lib/report-error";
 
 const supabase = createClient();
 
@@ -107,13 +108,11 @@ export async function approvePartner(
     await generateInitialStop(id);
     return { scheduleGenerated: true };
   } catch (err: any) {
-    // console.warn (BUKAN console.error) sengaja dipilih — ini skenario yang
-    // MEMANG kita antisipasi (misal tidak ada collector aktif), sudah
+    // level "warn" (BUKAN default "error") SENGAJA dipilih — ini skenario
+    // yang MEMANG kita antisipasi (misal tidak ada collector aktif), sudah
     // ditangani dengan baik lewat try/catch, dan sudah dikabari ke admin
-    // lewat toast di PartnerSection.tsx. console.error akan memicu overlay
-    // merah full-screen di Next.js dev mode untuk kasus yang sebetulnya
-    // tidak error sama sekali dari sisi aplikasi.
-    console.warn("[approvePartner] generateInitialStop gagal:", err?.message);
+    // lewat toast di PartnerSection.tsx.
+    reportError("approvePartner.generateInitialStop", err, "warn");
     return { scheduleGenerated: false, scheduleError: err?.message };
   }
 }
@@ -181,4 +180,21 @@ export async function updateLastPickupDate(
     .update({ last_pickup_date: date })
     .eq("id", partnerId);
   if (error) throw new Error(error.message);
+}
+
+// countPartnersActivatedInRange
+// ─────────────────────────────────────────────────────────────────────────────
+// FASE 4.2 — dipakai untuk indikator tren "Mitra" di Overview.
+export async function countPartnersActivatedInRange(
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("partner_applications")
+    .select("*", { count: "exact", head: true })
+    .gte("active_from", startDate)
+    .lt("active_from", endDate);
+
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }

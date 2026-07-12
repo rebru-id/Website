@@ -23,6 +23,7 @@
 
 import { supabaseAnon } from "@/lib/supabase/anon";
 import { mapSupabaseToUIProduct } from "@/lib/mappers";
+import { reportError } from "@/lib/report-error";
 import type { UIProduct } from "@/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,16 +361,20 @@ async function fetchAll(): Promise<UIProduct[]> {
       .order("sort_order");
 
     if (error || !data || data.length === 0) {
-      console.warn(
-        "[products] Supabase error atau data kosong, pakai fallback:",
-        error?.message,
+      // level "warn" — fallback ke data statis adalah perilaku yang
+      // MEMANG diantisipasi, bukan bug aplikasi.
+      reportError(
+        "products.fetchAll",
+        error ?? new Error("Data kosong dari Supabase"),
+        "warn",
       );
       return FALLBACK;
     }
 
     return data.map(mapSupabaseToUIProduct);
   } catch (err) {
-    console.error("[products] Unexpected error, pakai fallback:", err);
+    // level default "error" — exception TIDAK terduga, layak ditandai lebih tegas.
+    reportError("products.fetchAll.unexpected", err);
     return FALLBACK;
   }
 }
