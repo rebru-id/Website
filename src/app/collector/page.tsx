@@ -1,6 +1,7 @@
 "use client";
 // src/app/collector/page.tsx
 // ─────────────────────────────────────────────────────────────────────────────
+//
 // Perubahan dari versi sebelumnya:
 //
 //   REC 5 — Pisahkan Promise.all menjadi dua fetch independen
