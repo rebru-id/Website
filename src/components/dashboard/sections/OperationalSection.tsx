@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from "react";
-import { cn } from "@/utils";
+import { cn, estimateKgFromVolumeLimbah } from "@/utils";
 import {
   todayWITA,
   getMondayWITA,
@@ -403,15 +403,11 @@ function SuggestScheduleModal({
     return null;
   }
 
-  // Parse volume_limbah → ambil angka maksimum.
-  // Contoh: "1-5 kg/hari" → 5, "10 kg" → 10, "~3kg" → 3, kosong → ""
-  function parseMaxKg(volumeLimbah: string | null): string {
-    if (!volumeLimbah) return "";
-    const nums = volumeLimbah.match(/\d+(\.\d+)?/g);
-    if (!nums || nums.length === 0) return "";
-    const max = Math.max(...nums.map(Number));
-    return String(max);
-  }
+  // Fix — parseMaxKg lokal dipindah jadi estimateKgFromVolumeLimbah() di
+  // utils/volume-limbah.ts, supaya konsisten dengan jalur auto-generate di
+  // supabase-collector.ts (dulu keduanya duplikat dengan hasil BERBEDA —
+  // lihat catatan di file tersebut). Logikanya sama persis: angka maksimum
+  // dari rentang, tanpa dikali interval.
 
   // Load semua partner aktif + filter yang jatuh tempo minggu ini atau sudah lewat
   useEffect(() => {
@@ -445,7 +441,8 @@ function SuggestScheduleModal({
               assignedCollectorId: "",
               assignedDate: overdue >= 0 ? today : dueDate,
               assignedTime: "08:00",
-              estimatedKg: parseMaxKg(p.volume_limbah),
+              estimatedKg:
+                estimateKgFromVolumeLimbah(p.volume_limbah)?.toString() ?? "",
               confirmed: false,
             };
           });

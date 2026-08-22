@@ -14,8 +14,42 @@
 // Data: mock static, ported langsung dari rebru_dashboard_v2.html
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { cn } from "@/utils";
+import { todayWITA, addDays } from "@/utils/date";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  fetchBioKpiSummary,
+  fetchActiveBatches,
+  fetchPartnerContributionBreakdown,
+  fetchStockBatches,
+  fetchProductionRuns,
+  fetchBatches,
+  fetchEligibleStopsForBatch,
+  fetchBatchAllocatedTotals,
+  fetchStockUsage,
+  createBatch,
+  completeBatch,
+  openNewStockBatch,
+  allocateBatchToStock,
+  fetchStockBatchComposition,
+  createProductionRun,
+  completeProductionRun,
+  fetchYieldReport,
+  type BioKpiSummary,
+  type BatchWithPartner,
+  type PartnerContribution,
+  type StockBatch,
+  type ProductionRun,
+  type EligibleStop,
+  type StockComposition,
+  type StockUsageInfo,
+  type YieldReportRow,
+  type ProductType,
+} from "@/lib/supabase-bioconversion";
+import { reportError } from "@/lib/report-error";
+import { useDashToast } from "@/components/dashboard/DashToastContext";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -58,30 +92,98 @@ function SubTabBar({
 // KPI Row
 // ─────────────────────────────────────────────────────────────────────────────
 
-function KpiRow() {
+function KpiRow({
+  summary,
+  loading,
+  error,
+  onRetry,
+}: {
+  summary: BioKpiSummary | null;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  // ── Loading — skeleton 4 kartu, tampil HANYA sebelum data pertama ada ──────
+  if (loading && !summary) {
+    return (
+      <div className="dash-kpi-grid">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-lg animate-pulse"
+            style={{
+              background: "var(--bg-card)",
+              border: "0.5px solid var(--border-subtle)",
+              padding: "14px 16px",
+              height: "84px",
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // ── Error — HANYA kalau belum pernah punya data sama sekali ────────────────
+  if (error && !summary) {
+    return (
+      <div
+        className="rounded-lg px-5 py-4 flex items-center gap-3"
+        style={{
+          background: "rgba(160,72,72,0.08)",
+          border: "0.5px solid rgba(160,72,72,0.3)",
+        }}
+      >
+        <i
+          className="fas fa-exclamation-triangle text-xs"
+          style={{ color: "var(--color-error)" }}
+        />
+        <p className="text-sm flex-1" style={{ color: "var(--color-error)" }}>
+          {error}
+        </p>
+        <button
+          onClick={onRetry}
+          className="text-xs underline"
+          style={{ color: "var(--color-error)" }}
+        >
+          Coba lagi
+        </button>
+      </div>
+    );
+  }
+
+  if (!summary) return null;
+
+  const lossRate =
+    summary.totalPickupKg > 0
+      ? Math.round((1 - summary.totalDryKg / summary.totalPickupKg) * 100)
+      : 0;
+
   const kpis = [
     {
       label: "Total Pickup Bulan Ini",
-      value: "682 kg",
-      sub: "berat basah · 24 partner",
+      value: `${summary.totalPickupKg} kg`,
+      sub: "berat basah",
       color: "var(--coffee-latte)",
     },
     {
       label: "Setelah Pengeringan",
-      value: "423 kg",
-      sub: "rata-rata loss 38%",
+      value: `${summary.totalDryKg} kg`,
+      sub:
+        summary.totalPickupKg > 0
+          ? `rata-rata loss ${lossRate}%`
+          : "belum ada data",
       color: "var(--teal)",
     },
     {
       label: "Stok Tersedia",
-      value: "318 kg",
+      value: `${summary.stockAvailableKg} kg`,
       sub: "siap produksi",
       color: "var(--text-primary)",
     },
     {
       label: "Total Produksi",
-      value: "200 kg",
-      sub: "biochar + kompos",
+      value: `${summary.totalProductionKg} kg`,
+      sub: "biochar + kompos + briket + ecogoods",
       color: "var(--forest-sage)",
     },
   ];
@@ -130,7 +232,19 @@ function KpiRow() {
 // 4-Stage Pipeline
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Pipeline() {
+function Pipeline({
+  summary,
+  activeBatchCount,
+  activeStockCount,
+  productionByType,
+  monthLabel,
+}: {
+  summary: BioKpiSummary | null;
+  activeBatchCount: number;
+  activeStockCount: number;
+  productionByType: { biochar: number; kompos: number };
+  monthLabel: string;
+}) {
   const ARROW = (
     <div className="flex items-center px-1 flex-shrink-0">
       <svg width="18" height="18" viewBox="0 0 18 18">
@@ -146,11 +260,16 @@ function Pipeline() {
     </div>
   );
 
+  const lossRate =
+    summary && summary.totalPickupKg > 0
+      ? Math.round((1 - summary.totalDryKg / summary.totalPickupKg) * 100)
+      : 0;
+
   const stages = [
     {
       num: "1",
       label: "Pickup",
-      value: "682 kg",
+      value: `${summary?.totalPickupKg ?? 0} kg`,
       sub: "berat basah · per partner",
       note: "📍 Traceability 100% — data per partner tersedia",
       noteColor: "var(--text-muted)",
@@ -159,7 +278,7 @@ function Pipeline() {
       numColor: "var(--coffee-latte)",
       numBorder: "var(--coffee-latte)",
       valueColor: "var(--coffee-latte)",
-      badge: "✓ 138 trip",
+      badge: "Live",
       badgeBg: "rgba(45,90,46,0.12)",
       badgeColor: "var(--forest-sage)",
       badgeBorder: "rgba(45,90,46,0.3)",
@@ -168,8 +287,11 @@ function Pipeline() {
     {
       num: "2",
       label: "Dryer-Dome",
-      value: "423 kg",
-      sub: "berat kering · avg loss 38%",
+      value: `${summary?.totalDryKg ?? 0} kg`,
+      sub:
+        summary && summary.totalPickupKg > 0
+          ? `berat kering · avg loss ${lossRate}%`
+          : "berat kering",
       note: "📍 Traceability 100% — perubahan massa per batch tercatat",
       noteColor: "var(--text-muted)",
       noteBg: "var(--bg-primary)",
@@ -177,7 +299,7 @@ function Pipeline() {
       numColor: "var(--teal)",
       numBorder: "var(--teal)",
       valueColor: "var(--teal)",
-      badge: "14 batch",
+      badge: `${activeBatchCount} batch aktif`,
       badgeBg: "var(--teal-bg)",
       badgeColor: "var(--teal)",
       badgeBorder: "var(--teal-border)",
@@ -186,8 +308,8 @@ function Pipeline() {
     {
       num: "3",
       label: "Stock",
-      value: "318 kg",
-      sub: "tersedia · 2 batch aktif",
+      value: `${summary?.stockAvailableKg ?? 0} kg`,
+      sub: `tersedia · ${activeStockCount} pool aktif`,
       note: "⚡ Titik mixing — atribusi menjadi proporsional (dry weight)",
       noteColor: "var(--coffee-latte)",
       noteBg: "rgba(196,136,47,0.06)",
@@ -204,8 +326,8 @@ function Pipeline() {
     {
       num: "4",
       label: "Produksi",
-      value: "200 kg",
-      sub: "biochar 115 kg · kompos 85 kg",
+      value: `${summary?.totalProductionKg ?? 0} kg`,
+      sub: `biochar ${productionByType.biochar} kg · kompos ${productionByType.kompos} kg`,
       note: "📊 Atribusi proporsional berdasarkan dry weight kontribusi",
       noteColor: "var(--text-muted)",
       noteBg: "var(--bg-primary)",
@@ -238,7 +360,7 @@ function Pipeline() {
           letterSpacing: "0.08em",
         }}
       >
-        Alur Proses Operasional — Mei 2026
+        Alur Proses Operasional — {monthLabel}
       </p>
       <div className="flex items-stretch">
         {stages.map((s, i) => (
@@ -319,21 +441,104 @@ function Pipeline() {
 // TAB 1 — Dashboard Konversi
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PARTNER_DATA = [
-  { name: "Hotel Aryaduta", dry: 78, pct: 18.4 },
-  { name: "Café Phoenam", dry: 65, pct: 15.4 },
-  { name: "Anomali Coffee", dry: 54, pct: 12.8 },
-  { name: "Hotel Sahid", dry: 48, pct: 11.3 },
-  { name: "Makassar Ramen", dry: 43, pct: 10.2 },
-  { name: "Dalton Coffee", dry: 36, pct: 8.5 },
-];
+// PARTNER_DATA mock DIHAPUS — digantikan fetchPartnerContributionBreakdown()
+// yang dipanggil di komponen induk BioConversionSection, dikirim sebagai prop.
 
-function DashboardTab() {
+function DashboardTab({
+  summary,
+  activeBatches,
+  partnerBreakdown,
+  productionByType,
+  loading,
+  error,
+  onRetry,
+  monthLabel,
+}: {
+  summary: BioKpiSummary | null;
+  activeBatches: BatchWithPartner[];
+  partnerBreakdown: PartnerContribution[];
+  productionByType: { biochar: number; kompos: number };
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  monthLabel: string;
+}) {
+  // ── Loading — hanya sebelum data pertama pernah ada ─────────────────────
+  if (loading && activeBatches.length === 0 && partnerBreakdown.length === 0) {
+    return (
+      <div className="flex gap-3">
+        <div
+          className="flex-1 rounded-lg animate-pulse"
+          style={{
+            background: "var(--bg-card)",
+            border: "0.5px solid var(--border-subtle)",
+            height: "320px",
+          }}
+        />
+        <div
+          className="flex-shrink-0 rounded-lg animate-pulse"
+          style={{
+            width: "260px",
+            background: "var(--bg-card)",
+            border: "0.5px solid var(--border-subtle)",
+            height: "320px",
+          }}
+        />
+      </div>
+    );
+  }
+
+  // ── Error — hanya kalau belum pernah ada data sama sekali ────────────────
+  if (error && activeBatches.length === 0 && partnerBreakdown.length === 0) {
+    return (
+      <div
+        className="rounded-lg px-5 py-4 flex items-center gap-3"
+        style={{
+          background: "rgba(160,72,72,0.08)",
+          border: "0.5px solid rgba(160,72,72,0.3)",
+        }}
+      >
+        <i
+          className="fas fa-exclamation-triangle text-xs"
+          style={{ color: "var(--color-error)" }}
+        />
+        <p className="text-sm flex-1" style={{ color: "var(--color-error)" }}>
+          {error}
+        </p>
+        <button
+          onClick={onRetry}
+          className="text-xs underline"
+          style={{ color: "var(--color-error)" }}
+        >
+          Coba lagi
+        </button>
+      </div>
+    );
+  }
+
+  const topPct = partnerBreakdown[0]?.pct ?? 1;
+  const dryKg = summary?.totalDryKg ?? 0;
+  // Residu = sisa dry stock yang belum terpakai biochar/kompos (perkiraan
+  // kasar — briket & ecogoods TIDAK dihitung terpisah di visual Sankey ini,
+  // lihat catatan di bawah).
+  const residuKg = Math.max(
+    0,
+    Number(
+      (dryKg - productionByType.biochar - productionByType.kompos).toFixed(1),
+    ),
+  );
+
   return (
     <div className="flex gap-3">
       {/* Left: Sankey + Active Batches */}
       <div className="flex-1 min-w-0 flex flex-col gap-3">
         {/* Sankey SVG card */}
+        {/* CATATAN: proporsi visual (path/rect) TETAP statis — cuma label
+            angka yang sekarang nyata. Sankey proporsional penuh (bentuk
+            mengikuti rasio asli) adalah pekerjaan visualisasi tersendiri,
+            di luar scope BC-3 (wiring data). Briket & ecogoods belum
+            direpresentasikan di diagram ini (masih 3 alur: biochar/kompos/
+            residu, sesuai bentuk SVG asli). */}
         <div
           className="rounded-lg"
           style={{
@@ -346,7 +551,7 @@ function DashboardTab() {
             className="text-[11px] mb-3"
             style={{ color: "var(--text-muted)" }}
           >
-            Aliran Konversi Agregat — Mei 2026
+            Aliran Konversi Agregat — {monthLabel}
           </p>
           <svg
             viewBox="0 0 480 190"
@@ -374,7 +579,7 @@ function DashboardTab() {
               fontFamily="DM Sans,sans-serif"
               fontWeight="600"
             >
-              423 kg kering
+              {dryKg} kg kering
             </text>
             <rect
               x="20"
@@ -419,7 +624,7 @@ function DashboardTab() {
               fontFamily="DM Sans,sans-serif"
               fontWeight="600"
             >
-              115 kg
+              {productionByType.biochar} kg
             </text>
             <text
               x="338"
@@ -455,7 +660,7 @@ function DashboardTab() {
               fontFamily="DM Sans,sans-serif"
               fontWeight="600"
             >
-              85 kg
+              {productionByType.kompos} kg
             </text>
             <text
               x="338"
@@ -491,7 +696,7 @@ function DashboardTab() {
               fontSize="10"
               fontFamily="DM Sans,sans-serif"
             >
-              Residu
+              Residu ({residuKg} kg)
             </text>
 
             {/* Labels kanan */}
@@ -545,75 +750,74 @@ function DashboardTab() {
             Batch Aktif Saat Ini
           </p>
           <div className="flex flex-col gap-2">
-            {[
-              {
-                id: "DRY-014",
-                label: "Dryer Batch — Hotel Aryaduta",
-                detail: "Input 80 kg basah · Mulai 24 Mei",
-                metricLabel: "Progress",
-                metricVal: "67%",
-                metricColor: "var(--coffee-latte)",
-                tagBg: "rgba(196,136,47,0.12)",
-                tagColor: "var(--coffee-latte)",
-                tagBorder: "rgba(196,136,47,0.35)",
-              },
-              {
-                id: "STK-007",
-                label: "Stock Batch — Mixed (8 partner)",
-                detail: "318 kg kering tersedia · Threshold 400 kg",
-                metricLabel: "Terisi",
-                metricVal: "79.5%",
-                metricColor: "var(--teal)",
-                tagBg: "var(--teal-bg)",
-                tagColor: "var(--teal)",
-                tagBorder: "var(--teal-border)",
-              },
-            ].map((b) => (
-              <div
-                key={b.id}
-                className="flex items-center gap-3 rounded-md px-3 py-2.5"
-                style={{ background: "var(--bg-elevated)" }}
+            {activeBatches.length === 0 ? (
+              <p
+                className="text-[11px] py-3 text-center"
+                style={{ color: "var(--text-muted)" }}
               >
-                <span
-                  className="text-[10px] px-2 py-px rounded flex-shrink-0 font-mono"
-                  style={{
-                    background: b.tagBg,
-                    color: b.tagColor,
-                    border: `0.5px solid ${b.tagBorder}`,
-                  }}
-                >
-                  {b.id}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p
-                    className="text-xs font-medium"
-                    style={{ color: "var(--text-primary)" }}
+                Belum ada batch yang sedang dikeringkan.
+              </p>
+            ) : (
+              activeBatches.map((b) => {
+                const daysSinceStart = Math.max(
+                  0,
+                  Math.floor(
+                    (Date.now() - new Date(b.started_at).getTime()) /
+                      86_400_000,
+                  ),
+                );
+                const startedLabel = new Date(b.started_at).toLocaleDateString(
+                  "id-ID",
+                  { day: "numeric", month: "short" },
+                );
+                return (
+                  <div
+                    key={b.id}
+                    className="flex items-center gap-3 rounded-md px-3 py-2.5"
+                    style={{ background: "var(--bg-elevated)" }}
                   >
-                    {b.label}
-                  </p>
-                  <p
-                    className="text-[10px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {b.detail}
-                  </p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p
-                    className="text-[10px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {b.metricLabel}
-                  </p>
-                  <p
-                    className="font-semibold text-sm"
-                    style={{ color: b.metricColor }}
-                  >
-                    {b.metricVal}
-                  </p>
-                </div>
-              </div>
-            ))}
+                    <span
+                      className="text-[10px] px-2 py-px rounded flex-shrink-0 font-mono"
+                      style={{
+                        background: "rgba(196,136,47,0.12)",
+                        color: "var(--coffee-latte)",
+                        border: "0.5px solid rgba(196,136,47,0.35)",
+                      }}
+                    >
+                      {b.batch_code}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs font-medium"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        Dryer Batch — {b.partner?.organization ?? "—"}
+                      </p>
+                      <p
+                        className="text-[10px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Input {b.input_wet_kg} kg basah · Mulai {startedLabel}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p
+                        className="text-[10px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Berjalan
+                      </p>
+                      <p
+                        className="font-semibold text-sm"
+                        style={{ color: "var(--coffee-latte)" }}
+                      >
+                        {daysSinceStart} hari
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -640,7 +844,7 @@ function DashboardTab() {
             Kontribusi Partner (Dry)
           </p>
           <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-            Mei 2026
+            {monthLabel}
           </span>
         </div>
 
@@ -648,58 +852,58 @@ function DashboardTab() {
           className="flex flex-col gap-2 overflow-y-auto"
           style={{ maxHeight: "380px" }}
         >
-          {PARTNER_DATA.map((p) => (
-            <div
-              key={p.name}
-              className="rounded-md px-2.5 py-2"
-              style={{ background: "var(--bg-elevated)" }}
+          {partnerBreakdown.length === 0 ? (
+            <p
+              className="text-[11px] py-3 text-center"
+              style={{ color: "var(--text-muted)" }}
             >
-              <div className="flex justify-between mb-1">
-                <span
-                  className="text-[11px] font-medium"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {p.name}
-                </span>
-                <span
-                  className="text-[11px] font-medium"
-                  style={{ color: "var(--coffee-latte)" }}
-                >
-                  {p.dry} kg
-                </span>
-              </div>
+              Belum ada data kontribusi bulan ini.
+            </p>
+          ) : (
+            partnerBreakdown.map((p) => (
               <div
-                className="flex justify-between text-[10px] mb-1.5"
-                style={{ color: "var(--text-muted)" }}
+                key={p.partnerId}
+                className="rounded-md px-2.5 py-2"
+                style={{ background: "var(--bg-elevated)" }}
               >
-                <span>dry weight contribution</span>
-                <span style={{ color: "var(--teal)" }}>{p.pct}%</span>
-              </div>
-              {/* Proportional bar */}
-              <div
-                className="rounded-full"
-                style={{ height: "3px", background: "var(--bg-primary)" }}
-              >
+                <div className="flex justify-between mb-1">
+                  <span
+                    className="text-[11px] font-medium"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {p.organization}
+                  </span>
+                  <span
+                    className="text-[11px] font-medium"
+                    style={{ color: "var(--coffee-latte)" }}
+                  >
+                    {p.dryKg} kg
+                  </span>
+                </div>
                 <div
-                  className="rounded-full h-full"
-                  style={{
-                    width: `${(p.pct / 18.4) * 100}%`,
-                    background: "var(--coffee-latte)",
-                    opacity: 0.7,
-                  }}
-                />
+                  className="flex justify-between text-[10px] mb-1.5"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <span>dry weight contribution</span>
+                  <span style={{ color: "var(--teal)" }}>{p.pct}%</span>
+                </div>
+                {/* Proportional bar */}
+                <div
+                  className="rounded-full"
+                  style={{ height: "3px", background: "var(--bg-primary)" }}
+                >
+                  <div
+                    className="rounded-full h-full"
+                    style={{
+                      width: `${(p.pct / topPct) * 100}%`,
+                      background: "var(--coffee-latte)",
+                      opacity: 0.7,
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
-          <div
-            className="text-center text-[10px] py-2 rounded cursor-pointer"
-            style={{
-              color: "var(--text-muted)",
-              border: "0.5px dashed var(--border-default)",
-            }}
-          >
-            +18 partner lainnya · lihat semua →
-          </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -710,7 +914,594 @@ function DashboardTab() {
 // TAB 2 — Manajemen Batch
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Modal shell & helper (dipakai semua modal BC-4) ─────────────────────────
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.6)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="rounded-lg w-full max-w-[380px] mx-4"
+        style={{
+          background: "var(--bg-surface)",
+          border: "0.5px solid var(--border-default)",
+          padding: "20px",
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3
+            className="text-sm font-semibold"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {title}
+          </h3>
+          <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
+            <i className="fas fa-times text-xs" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ModalField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3">
+      <label
+        className="block text-[10px] uppercase tracking-wider mb-1.5"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const modalInputClass = "w-full px-3 py-2 rounded text-xs outline-none";
+const modalInputStyle = {
+  background: "var(--bg-card)",
+  border: "0.5px solid var(--border-default)",
+  color: "var(--text-primary)",
+};
+
+function ModalSubmitButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full py-2.5 rounded text-xs font-medium mt-2 disabled:opacity-50"
+      style={{
+        background: "var(--coffee-latte)",
+        color: "var(--bg-primary)",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ── AddBatchModal — Tahap 2, catat batch baru dari stop yang eligible ───────
+
+function AddBatchModal({
+  eligibleStops,
+  onClose,
+  onSubmit,
+}: {
+  eligibleStops: EligibleStop[];
+  onClose: () => void;
+  onSubmit: (stopId: string, partnerId: string, wetKg: number) => Promise<void>;
+}) {
+  const [stopId, setStopId] = useState("");
+  const [wetKg, setWetKg] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const selected = eligibleStops.find((s) => s.id === stopId);
+
+  useEffect(() => {
+    if (selected) setWetKg(String(selected.actualKg));
+  }, [selected]);
+
+  const handleSubmit = async () => {
+    if (!selected || !wetKg) return;
+    setSaving(true);
+    try {
+      await onSubmit(selected.id, selected.partnerId, Number(wetKg));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Catat Batch Baru" onClose={onClose}>
+      <ModalField label="Pilih Stop — urut FIFO, paling lama menunggu duluan">
+        <select
+          value={stopId}
+          onChange={(e) => setStopId(e.target.value)}
+          className={modalInputClass}
+          style={modalInputStyle}
+        >
+          <option value="">— pilih —</option>
+          {eligibleStops.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.orderNumber ?? "—"} · {s.organization} ·{" "}
+              {new Date(s.completedAt).toLocaleDateString("id-ID", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </option>
+          ))}
+        </select>
+      </ModalField>
+
+      {eligibleStops.length === 0 && (
+        <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
+          Tidak ada stop yang eligible — semua pickup selesai sudah punya batch.
+        </p>
+      )}
+
+      <ModalField label="Berat Basah (kg)">
+        <input
+          type="number"
+          value={wetKg}
+          onChange={(e) => setWetKg(e.target.value)}
+          className={modalInputClass}
+          style={modalInputStyle}
+        />
+      </ModalField>
+
+      <ModalSubmitButton
+        label={saving ? "Menyimpan..." : "Buat Batch"}
+        disabled={!stopId || !wetKg || saving}
+        onClick={handleSubmit}
+      />
+    </ModalShell>
+  );
+}
+
+// ── NumberPromptModal — generic, dipakai "Selesaikan Batch" (cuma butuh
+// 1 angka: berat kering). "Selesaikan Produksi" sekarang pakai
+// CompleteProductionModal sendiri (butuh 2 field: aktual + output) ─────────
+
+function NumberPromptModal({
+  title,
+  fieldLabel,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  fieldLabel: string;
+  onClose: () => void;
+  onSubmit: (value: number) => Promise<void>;
+}) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!value) return;
+    setSaving(true);
+    try {
+      await onSubmit(Number(value));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title={title} onClose={onClose}>
+      <ModalField label={fieldLabel}>
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className={modalInputClass}
+          style={modalInputStyle}
+          autoFocus
+        />
+      </ModalField>
+      <ModalSubmitButton
+        label={saving ? "Menyimpan..." : "Simpan"}
+        disabled={!value || saving}
+        onClick={handleSubmit}
+      />
+    </ModalShell>
+  );
+}
+
+// ── CompleteProductionModal — Selesaikan produksi, dengan opsi "kembalikan
+// sisa" ke pool stock (FASE BC-4.2) ─────────────────────────────────────────
+
+function CompleteProductionModal({
+  run,
+  onClose,
+  onSubmit,
+}: {
+  run: ProductionRun;
+  onClose: () => void;
+  onSubmit: (outputKg: number, actualInputKg: number) => Promise<void>;
+}) {
+  const [outputKg, setOutputKg] = useState("");
+  const [actualInputKg, setActualInputKg] = useState(String(run.input_kg));
+  const [saving, setSaving] = useState(false);
+
+  const sisaDikembalikan = Math.max(
+    0,
+    Number((run.input_kg - Number(actualInputKg || run.input_kg)).toFixed(1)),
+  );
+
+  const handleSubmit = async () => {
+    if (!outputKg || !actualInputKg) return;
+    setSaving(true);
+    try {
+      await onSubmit(Number(outputKg), Number(actualInputKg));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title={`Selesaikan ${run.run_code}`} onClose={onClose}>
+      <ModalField
+        label={`Pemakaian Aktual (kg) — rencana awal ${run.input_kg} kg`}
+      >
+        <input
+          type="number"
+          value={actualInputKg}
+          max={run.input_kg}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setActualInputKg(
+              v > run.input_kg ? String(run.input_kg) : e.target.value,
+            );
+          }}
+          className={modalInputClass}
+          style={modalInputStyle}
+        />
+        {sisaDikembalikan > 0 && (
+          <p className="text-[10px] mt-1" style={{ color: "var(--teal)" }}>
+            {sisaDikembalikan} kg akan dikembalikan ke pool stock, bisa dipakai
+            produksi lain.
+          </p>
+        )}
+      </ModalField>
+      <ModalField label="Output Produk Jadi (kg)">
+        <input
+          type="number"
+          value={outputKg}
+          onChange={(e) => setOutputKg(e.target.value)}
+          className={modalInputClass}
+          style={modalInputStyle}
+        />
+      </ModalField>
+      <ModalSubmitButton
+        label={saving ? "Menyimpan..." : "Selesaikan"}
+        disabled={!outputKg || !actualInputKg || saving}
+        onClick={handleSubmit}
+      />
+    </ModalShell>
+  );
+}
+
+// ── AllocateStockModal — Tahap 2→3, alokasikan batch kering ke pool stock ───
+
+function AllocateStockModal({
+  batch,
+  remainingBatchKg,
+  stockPools,
+  onClose,
+  onSubmit,
+}: {
+  batch: BatchWithPartner;
+  remainingBatchKg: number;
+  stockPools: StockBatch[];
+  onClose: () => void;
+  onSubmit: (stockBatchId: string, dryKg: number) => Promise<void>;
+}) {
+  const openPools = stockPools.filter((p) => p.status === "accumulating");
+  const [stockBatchId, setStockBatchId] = useState("");
+  const [dryKg, setDryKg] = useState(String(remainingBatchKg));
+  const [saving, setSaving] = useState(false);
+
+  const selectedPool = openPools.find((p) => p.id === stockBatchId);
+  const poolRemaining = selectedPool
+    ? Number((selectedPool.threshold_kg - selectedPool.current_kg).toFixed(1))
+    : null;
+  // Batas maksimal alokasi = yang PALING KECIL antara sisa dry output batch
+  // dan sisa kapasitas pool yang dipilih (fix over-allocation).
+  const maxAllocatable =
+    poolRemaining !== null
+      ? Math.min(remainingBatchKg, poolRemaining)
+      : remainingBatchKg;
+
+  const handleSubmit = async () => {
+    if (!stockBatchId || !dryKg) return;
+    setSaving(true);
+    try {
+      await onSubmit(stockBatchId, Number(dryKg));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title={`Alokasikan ${batch.batch_code} ke Stock`}
+      onClose={onClose}
+    >
+      <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
+        Sisa dry output batch ini yang belum dialokasikan:{" "}
+        <strong style={{ color: "var(--coffee-latte)" }}>
+          {remainingBatchKg} kg
+        </strong>
+      </p>
+
+      <ModalField label="Pilih Pool Stock (accumulating)">
+        <select
+          value={stockBatchId}
+          onChange={(e) => setStockBatchId(e.target.value)}
+          className={modalInputClass}
+          style={modalInputStyle}
+        >
+          <option value="">— pilih —</option>
+          {openPools.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.stock_code} · {p.current_kg}/{p.threshold_kg} kg
+            </option>
+          ))}
+        </select>
+      </ModalField>
+
+      {openPools.length === 0 && (
+        <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
+          Belum ada pool stock yang terbuka — buka pool baru dulu di Tahap 3.
+        </p>
+      )}
+
+      <ModalField
+        label={`Dry Kg Dialokasikan (maks ${maxAllocatable.toFixed(1)} kg)`}
+      >
+        <input
+          type="number"
+          value={dryKg}
+          max={maxAllocatable}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setDryKg(
+              v > maxAllocatable ? String(maxAllocatable) : e.target.value,
+            );
+          }}
+          className={modalInputClass}
+          style={modalInputStyle}
+        />
+      </ModalField>
+
+      <ModalSubmitButton
+        label={saving ? "Menyimpan..." : "Alokasikan"}
+        disabled={!stockBatchId || !dryKg || Number(dryKg) <= 0 || saving}
+        onClick={handleSubmit}
+      />
+    </ModalShell>
+  );
+}
+
+// ── OpenStockModal — Tahap 3, buka pool stock baru ──────────────────────────
+
+function OpenStockModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (thresholdKg: number) => Promise<void>;
+}) {
+  const [threshold, setThreshold] = useState(30);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      await onSubmit(threshold);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Buka Pool Stock Baru" onClose={onClose}>
+      <ModalField label="Ukuran Pool">
+        <div className="flex gap-2">
+          {[15, 30, 50].map((t) => (
+            <button
+              key={t}
+              onClick={() => setThreshold(t)}
+              className="flex-1 py-2 rounded text-xs"
+              style={{
+                background:
+                  threshold === t ? "var(--coffee-latte)" : "var(--bg-card)",
+                color:
+                  threshold === t
+                    ? "var(--bg-primary)"
+                    : "var(--text-secondary)",
+                border: "0.5px solid var(--border-default)",
+              }}
+            >
+              {t} kg
+            </button>
+          ))}
+        </div>
+      </ModalField>
+      <ModalSubmitButton
+        label={saving ? "Membuka..." : "Buka Pool"}
+        disabled={saving}
+        onClick={handleSubmit}
+      />
+    </ModalShell>
+  );
+}
+
+// ── StartProductionModal — Tahap 3→4, mulai proses produksi dari 1 pool ────
+
+const PRODUCT_TYPE_LABEL: Record<ProductType, string> = {
+  biochar: "Biochar (Pyrolysis)",
+  kompos: "Kompos (Composting)",
+  briket: "Briket (Karbonisasi)",
+  ecogoods: "Eco-goods (Langsung Pakai)",
+};
+
+function StartProductionModal({
+  stock,
+  remainingKg,
+  onClose,
+  onSubmit,
+}: {
+  stock: StockBatch;
+  remainingKg: number;
+  onClose: () => void;
+  onSubmit: (productType: ProductType, inputKg: number) => Promise<void>;
+}) {
+  const [productType, setProductType] = useState<ProductType>("biochar");
+  const [inputKg, setInputKg] = useState(String(remainingKg));
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!inputKg) return;
+    setSaving(true);
+    try {
+      await onSubmit(productType, Number(inputKg));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell
+      title={`Mulai Produksi — ${stock.stock_code}`}
+      onClose={onClose}
+    >
+      <ModalField label="Jenis Produk">
+        <select
+          value={productType}
+          onChange={(e) => setProductType(e.target.value as ProductType)}
+          className={modalInputClass}
+          style={modalInputStyle}
+        >
+          {(Object.keys(PRODUCT_TYPE_LABEL) as ProductType[]).map((pt) => (
+            <option key={pt} value={pt}>
+              {PRODUCT_TYPE_LABEL[pt]}
+            </option>
+          ))}
+        </select>
+      </ModalField>
+      <ModalField label={`Input Kg (sisa tersedia ${remainingKg} kg)`}>
+        <input
+          type="number"
+          value={inputKg}
+          max={remainingKg}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setInputKg(v > remainingKg ? String(remainingKg) : e.target.value);
+          }}
+          className={modalInputClass}
+          style={modalInputStyle}
+        />
+      </ModalField>
+      <ModalSubmitButton
+        label={saving ? "Memulai..." : "Mulai Produksi"}
+        disabled={!inputKg || Number(inputKg) <= 0 || saving}
+        onClick={handleSubmit}
+      />
+    </ModalShell>
+  );
+}
+
+// ── BatchTab — Tahap 2, 3, 4 dengan CRUD penuh (BC-4) ───────────────────────
+
+// FASE BC-4.3 (poin 2 & 3) — diferensiasi visual per kondisi kartu, dipakai
+// SAMA di kartu Batch (Tahap 2) dan Stock (Tahap 3) supaya bahasa visualnya
+// konsisten di seluruh tab, bukan token warna baru per tempat:
+//   "active"     = sedang berjalan (drying / accumulating) — netral, teal
+//   "actionable" = butuh aksi admin sekarang (siap dialokasikan/produksi) — gold
+//   "done"       = tuntas, tidak perlu diapa-apakan lagi — hijau redup
+type CardState = "active" | "actionable" | "done";
+
+const CARD_STATE_STYLE: Record<
+  CardState,
+  { background: string; border: string; opacity?: number }
+> = {
+  active: {
+    background: "var(--teal-bg)",
+    border: "0.5px solid var(--teal-border)",
+  },
+  actionable: {
+    background: "rgba(196,136,47,0.06)",
+    border: "0.5px solid rgba(196,136,47,0.35)",
+  },
+  done: {
+    background: "rgba(45,90,46,0.05)",
+    border: "0.5px solid rgba(45,90,46,0.25)",
+    opacity: 0.75,
+  },
+};
+
+type BatchModalState =
+  | { type: "addBatch" }
+  | { type: "completeBatch"; batch: BatchWithPartner }
+  | { type: "allocateStock"; batch: BatchWithPartner }
+  | { type: "openStock" }
+  | { type: "startProduction"; stock: StockBatch }
+  | { type: "completeProduction"; run: ProductionRun }
+  | null;
+
 function BatchTab() {
+  const { show: showToast } = useDashToast();
+
+  const [batches, setBatches] = useState<BatchWithPartner[]>([]);
+  const [stockPools, setStockPools] = useState<StockBatch[]>([]);
+  const [productionRuns, setProductionRuns] = useState<ProductionRun[]>([]);
+  const [compositions, setCompositions] = useState<
+    Record<string, StockComposition[]>
+  >({});
+  const [eligibleStops, setEligibleStops] = useState<EligibleStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<BatchModalState>(null);
+  // FASE BC-4.1 — sisa dry output batch (cegah over-allocation) & breakdown
+  // pemakaian tiap pool stock (used/remaining/dipakai untuk apa).
+  const [allocatedTotals, setAllocatedTotals] = useState<
+    Record<string, number>
+  >({});
+  const [stockUsage, setStockUsage] = useState<Record<string, StockUsageInfo>>(
+    {},
+  );
+
   const STAGE_HEADER = (label: string, color: string, bg: string) => (
     <div
       className="flex items-center gap-2 mb-2"
@@ -728,8 +1519,199 @@ function BatchTab() {
     </div>
   );
 
-  // Stage bar colors for the stock composition bar
-  const COMP_COLORS = [
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [b, sp, pr, stops, allocTotals] = await Promise.all([
+        fetchBatches(),
+        fetchStockBatches(),
+        fetchProductionRuns(),
+        fetchEligibleStopsForBatch(),
+        fetchBatchAllocatedTotals(),
+      ]);
+      setBatches(b);
+      setStockPools(sp);
+      setProductionRuns(pr);
+      setEligibleStops(stops);
+      setAllocatedTotals(allocTotals);
+
+      const comps: Record<string, StockComposition[]> = {};
+      const usage: Record<string, StockUsageInfo> = {};
+      await Promise.all(
+        sp.map(async (pool) => {
+          comps[pool.id] = await fetchStockBatchComposition(pool.id);
+          usage[pool.id] = await fetchStockUsage(pool.id);
+        }),
+      );
+      setCompositions(comps);
+      setStockUsage(usage);
+    } catch (err: any) {
+      reportError("BioConversionSection.BatchTab.load", err);
+      setError(err?.message ?? "Gagal memuat data batch");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // ── Handlers — semua try/catch, toast, tutup modal, refresh data ──────────
+
+  const handleAddBatch = async (
+    stopId: string,
+    partnerId: string,
+    wetKg: number,
+  ) => {
+    try {
+      await createBatch(stopId, partnerId, wetKg);
+      showToast("Batch baru berhasil dicatat.", "success");
+      setModal(null);
+      load();
+    } catch (err: any) {
+      reportError("BioConversionSection.BatchTab.handleAddBatch", err);
+      showToast(err?.message ?? "Gagal mencatat batch.", "error");
+    }
+  };
+
+  const handleCompleteBatch = async (batchId: string, dryKg: number) => {
+    try {
+      await completeBatch(batchId, dryKg);
+      showToast("Batch ditandai selesai.", "success");
+      setModal(null);
+      load();
+    } catch (err: any) {
+      reportError("BioConversionSection.BatchTab.handleCompleteBatch", err);
+      showToast(err?.message ?? "Gagal menyelesaikan batch.", "error");
+    }
+  };
+
+  const handleAllocate = async (
+    batchId: string,
+    stockBatchId: string,
+    dryKg: number,
+  ) => {
+    try {
+      await allocateBatchToStock(batchId, stockBatchId, dryKg);
+      showToast("Alokasi ke stock berhasil.", "success");
+      setModal(null);
+      load();
+    } catch (err: any) {
+      reportError("BioConversionSection.BatchTab.handleAllocate", err);
+      showToast(err?.message ?? "Gagal alokasi ke stock.", "error");
+    }
+  };
+
+  const handleOpenStock = async (thresholdKg: number) => {
+    try {
+      await openNewStockBatch(thresholdKg);
+      showToast("Pool stock baru berhasil dibuka.", "success");
+      setModal(null);
+      load();
+    } catch (err: any) {
+      reportError("BioConversionSection.BatchTab.handleOpenStock", err);
+      showToast(err?.message ?? "Gagal membuka pool stock.", "error");
+    }
+  };
+
+  const handleStartProduction = async (
+    stockBatchId: string,
+    productType: ProductType,
+    inputKg: number,
+  ) => {
+    try {
+      await createProductionRun(stockBatchId, productType, inputKg);
+      showToast("Proses produksi dimulai.", "success");
+      setModal(null);
+      load();
+    } catch (err: any) {
+      reportError("BioConversionSection.BatchTab.handleStartProduction", err);
+      showToast(err?.message ?? "Gagal memulai produksi.", "error");
+    }
+  };
+
+  const handleCompleteProduction = async (
+    runId: string,
+    outputKg: number,
+    actualInputKg: number,
+    stockBatchId: string,
+  ) => {
+    try {
+      await completeProductionRun(runId, outputKg, actualInputKg);
+      // FASE BC-4.2 — cek sisa pool LANGSUNG setelah update (bukan dari
+      // state React yang belum tentu sinkron di titik ini) supaya toast
+      // menampilkan kondisi yang benar-benar akurat.
+      const usage = await fetchStockUsage(stockBatchId);
+      if (usage.remainingKg <= 0.001) {
+        showToast(`Pool stock telah habis terpakai.`, "success");
+      } else {
+        showToast(
+          `Produksi selesai. Sisa ${usage.remainingKg} kg di pool siap dipakai produksi lain.`,
+          "success",
+        );
+      }
+      setModal(null);
+      load();
+    } catch (err: any) {
+      reportError(
+        "BioConversionSection.BatchTab.handleCompleteProduction",
+        err,
+      );
+      showToast(err?.message ?? "Gagal menyelesaikan produksi.", "error");
+    }
+  };
+
+  // ── Loading / error — hanya sebelum data pertama pernah ada ────────────────
+
+  if (loading && batches.length === 0) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="rounded-lg animate-pulse"
+            style={{
+              background: "var(--bg-card)",
+              border: "0.5px solid var(--border-subtle)",
+              height: "64px",
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (error && batches.length === 0) {
+    return (
+      <div
+        className="rounded-lg px-5 py-4 flex items-center gap-3"
+        style={{
+          background: "rgba(160,72,72,0.08)",
+          border: "0.5px solid rgba(160,72,72,0.3)",
+        }}
+      >
+        <i
+          className="fas fa-exclamation-triangle text-xs"
+          style={{ color: "var(--color-error)" }}
+        />
+        <p className="text-sm flex-1" style={{ color: "var(--color-error)" }}>
+          {error}
+        </p>
+        <button
+          onClick={load}
+          className="text-xs underline"
+          style={{ color: "var(--color-error)" }}
+        >
+          Coba lagi
+        </button>
+      </div>
+    );
+  }
+
+  const nonCancelledBatches = batches.filter((b) => b.status !== "cancelled");
+  const compColors = [
     "var(--coffee-latte)",
     "var(--forest-sage)",
     "var(--teal)",
@@ -739,31 +1721,19 @@ function BatchTab() {
     "#8B8B8B",
     "#C4AA70",
   ];
-  const COMP_PCTS = [18.4, 15.4, 12.8, 11.3, 10.2, 8.5, 12.1, 11.3];
 
   return (
     <div>
       {/* Action bar */}
       <div className="flex justify-end gap-2 mb-4">
         <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px]"
-          style={{
-            background: "var(--bg-card)",
-            border: "0.5px solid var(--border-subtle)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          <i className="fas fa-filter text-[9px]" /> Filter
-        </button>
-        <button
+          onClick={() => setModal({ type: "addBatch" })}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px]"
           style={{
             background: "var(--coffee-latte)",
             color: "var(--bg-primary)",
             border: "none",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
         >
           <i className="fas fa-plus text-[9px]" /> Catat Batch Baru
         </button>
@@ -772,237 +1742,382 @@ function BatchTab() {
       {/* Stage 2 — Dryer */}
       {STAGE_HEADER("Tahap 2 — Dryer-Dome", "var(--teal)", "var(--teal-bg)")}
       <div className="flex flex-col gap-2 mb-5">
-        {[
-          {
-            id: "DRY-014",
-            idBg: "var(--teal-bg)",
-            idColor: "var(--teal)",
-            idBorder: "var(--teal-border)",
-            name: "Hotel Aryaduta",
-            detail: "Input: 80 kg basah · Mulai 24 Mei 2026",
-            m1l: "Dry est.",
-            m1v: "~50 kg",
-            m1c: "var(--teal)",
-            m2l: "Progress",
-            m2v: "67%",
-            m2c: "var(--coffee-latte)",
-            statusLabel: "Berlangsung",
-            statusBg: "rgba(196,136,47,0.12)",
-            statusColor: "var(--coffee-latte)",
-            statusBorder: "rgba(196,136,47,0.4)",
-            dim: false,
-          },
-          {
-            id: "DRY-013",
-            idBg: "rgba(45,90,46,0.12)",
-            idColor: "var(--forest-sage)",
-            idBorder: "rgba(45,90,46,0.3)",
-            name: "Café Phoenam + Dalton Coffee",
-            detail: "Input: 164 kg basah · Selesai 22 Mei",
-            m1l: "Dry output",
-            m1v: "101 kg",
-            m1c: "var(--forest-sage)",
-            m2l: "Moisture loss",
-            m2v: "38.4%",
-            m2c: "var(--text-primary)",
-            statusLabel: "✓ Selesai",
-            statusBg: "rgba(45,90,46,0.12)",
-            statusColor: "var(--forest-sage)",
-            statusBorder: "rgba(45,90,46,0.3)",
-            dim: true,
-          },
-        ].map((b) => (
-          <div
-            key={b.id}
-            className="flex items-center gap-3 rounded-lg"
-            style={{
-              background: "var(--bg-card)",
-              border: "0.5px solid var(--border-subtle)",
-              padding: "13px 14px",
-              opacity: b.dim ? 0.7 : 1,
-            }}
+        {nonCancelledBatches.length === 0 ? (
+          <p
+            className="text-[11px] py-3 text-center"
+            style={{ color: "var(--text-muted)" }}
           >
-            <div>
-              <span
-                className="inline-block text-[10px] px-2 py-px rounded font-mono mb-1.5"
+            Belum ada batch dryer tercatat.
+          </p>
+        ) : (
+          nonCancelledBatches.map((b) => {
+            const isDrying = b.status === "drying";
+            const allocatedSoFar = allocatedTotals[b.id] ?? 0;
+            const remainingToAllocate = Number(
+              ((b.output_dry_kg ?? 0) - allocatedSoFar).toFixed(1),
+            );
+            const isFullyAllocated =
+              !isDrying && b.output_dry_kg != null && remainingToAllocate <= 0;
+            const cardState: CardState = isDrying
+              ? "active"
+              : isFullyAllocated
+                ? "done"
+                : "actionable";
+            const cardStyle = CARD_STATE_STYLE[cardState];
+            return (
+              <div
+                key={b.id}
+                className="flex items-center gap-3 rounded-lg"
                 style={{
-                  background: b.idBg,
-                  color: b.idColor,
-                  border: `0.5px solid ${b.idBorder}`,
+                  background: cardStyle.background,
+                  border: cardStyle.border,
+                  padding: "13px 14px",
+                  opacity: cardStyle.opacity ?? 1,
                 }}
               >
-                {b.id}
-              </span>
-              <p
-                className="text-xs font-medium"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {b.name}
-              </p>
-              <p
-                className="text-[10px] mt-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {b.detail}
-              </p>
-            </div>
-            <div className="ml-auto flex items-center gap-5">
-              <div className="text-center">
-                <p
-                  className="text-[10px] mb-0.5"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {b.m1l}
-                </p>
-                <p className="font-semibold text-sm" style={{ color: b.m1c }}>
-                  {b.m1v}
-                </p>
+                <div>
+                  <span
+                    className="inline-block text-[10px] px-2 py-px rounded font-mono mb-1.5"
+                    style={{
+                      background: isDrying
+                        ? "var(--teal-bg)"
+                        : "rgba(45,90,46,0.12)",
+                      color: isDrying ? "var(--teal)" : "var(--forest-sage)",
+                      border: `0.5px solid ${
+                        isDrying ? "var(--teal-border)" : "rgba(45,90,46,0.3)"
+                      }`,
+                    }}
+                  >
+                    {b.batch_code}
+                  </span>
+                  <p
+                    className="text-xs font-medium"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {b.partner?.organization ?? "—"}
+                  </p>
+                  <p
+                    className="text-[10px] mt-0.5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Order: {b.stop?.order_number ?? "—"} · Input:{" "}
+                    {b.input_wet_kg} kg basah · {isDrying ? "Mulai" : "Selesai"}{" "}
+                    {new Date(
+                      isDrying
+                        ? b.started_at
+                        : (b.completed_at ?? b.started_at),
+                    ).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
+                  {/* FASE BC-4.3 (poin 1) — chip, bukan teks polos, supaya
+                      tidak mudah terlewat saat masih ada sisa alokasi */}
+                  {!isDrying && (
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded mt-1.5"
+                      style={
+                        isFullyAllocated
+                          ? {
+                              background: "rgba(45,90,46,0.12)",
+                              color: "var(--forest-sage)",
+                              border: "0.5px solid rgba(45,90,46,0.3)",
+                            }
+                          : {
+                              background: "rgba(196,136,47,0.12)",
+                              color: "var(--coffee-latte)",
+                              border: "0.5px solid rgba(196,136,47,0.35)",
+                            }
+                      }
+                    >
+                      <i
+                        className={`fas ${isFullyAllocated ? "fa-check" : "fa-box"} text-[8px]`}
+                      />
+                      {isFullyAllocated
+                        ? "Teralokasi Penuh"
+                        : `Sisa ${remainingToAllocate} kg belum dialokasikan`}
+                    </span>
+                  )}
+                </div>
+                <div className="ml-auto flex items-center gap-5">
+                  <div className="text-center">
+                    <p
+                      className="text-[10px] mb-0.5"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {isDrying ? "Status" : "Dry output"}
+                    </p>
+                    <p
+                      className="font-semibold text-sm"
+                      style={{
+                        color: isDrying
+                          ? "var(--coffee-latte)"
+                          : "var(--forest-sage)",
+                      }}
+                    >
+                      {isDrying ? "Berlangsung" : `${b.output_dry_kg} kg`}
+                    </p>
+                  </div>
+                </div>
+                {isDrying ? (
+                  <button
+                    onClick={() =>
+                      setModal({ type: "completeBatch", batch: b })
+                    }
+                    className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      border: "0.5px solid var(--border-subtle)",
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    Selesaikan
+                  </button>
+                ) : isFullyAllocated ? (
+                  <span
+                    className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
+                    style={{
+                      background: "rgba(45,90,46,0.1)",
+                      color: "var(--forest-sage)",
+                      border: "0.5px solid rgba(45,90,46,0.25)",
+                    }}
+                  >
+                    Selesai
+                  </span>
+                ) : (
+                  <button
+                    onClick={() =>
+                      setModal({ type: "allocateStock", batch: b })
+                    }
+                    className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      border: "0.5px solid var(--border-subtle)",
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    Alokasikan
+                  </button>
+                )}
               </div>
-              <div className="text-center">
-                <p
-                  className="text-[10px] mb-0.5"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  {b.m2l}
-                </p>
-                <p className="font-semibold text-sm" style={{ color: b.m2c }}>
-                  {b.m2v}
-                </p>
-              </div>
-              <div className="text-center">
-                <p
-                  className="text-[10px] mb-0.5"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  Status
-                </p>
-                <span
-                  className="text-[10px] px-2 py-px rounded"
-                  style={{
-                    background: b.statusBg,
-                    color: b.statusColor,
-                    border: `0.5px solid ${b.statusBorder}`,
-                  }}
-                >
-                  {b.statusLabel}
-                </span>
-              </div>
-            </div>
-            <button
-              className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "0.5px solid var(--border-subtle)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              Detail
-            </button>
-          </div>
-        ))}
+            );
+          })
+        )}
       </div>
 
       {/* Stage 3 — Stock */}
-      {STAGE_HEADER(
-        "Tahap 3 — Stock (Mixed)",
-        "var(--coffee-latte)",
-        "rgba(196,136,47,0.08)",
-      )}
-      <div className="flex flex-col gap-2 mb-5">
-        <div
-          className="rounded-lg"
+      <div className="flex items-center justify-between mb-2">
+        {STAGE_HEADER(
+          "Tahap 3 — Stock (Mixed)",
+          "var(--coffee-latte)",
+          "rgba(196,136,47,0.08)",
+        )}
+        <button
+          onClick={() => setModal({ type: "openStock" })}
+          className="text-[10px] px-2.5 py-1 rounded"
           style={{
-            background: "var(--bg-card)",
+            background: "var(--bg-elevated)",
             border: "0.5px solid var(--border-subtle)",
-            padding: "13px 14px",
+            color: "var(--text-secondary)",
           }}
         >
-          <div className="flex items-center gap-3 mb-3">
-            <div>
-              <span
-                className="inline-block text-[10px] px-2 py-px rounded font-mono mb-1.5"
-                style={{
-                  background: "rgba(196,136,47,0.12)",
-                  color: "var(--coffee-latte)",
-                  border: "0.5px solid rgba(196,136,47,0.4)",
-                }}
-              >
-                STK-007
-              </span>
-              <p
-                className="text-xs font-medium"
-                style={{ color: "var(--text-primary)" }}
-              >
-                Stock Batch Aktif — 8 Partner
-              </p>
-              <p
-                className="text-[10px] mt-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Threshold: 400 kg · Tersedia: 318 kg
-              </p>
-            </div>
-            <div className="ml-auto flex items-center gap-5">
-              <div className="text-center">
-                <p
-                  className="text-[10px] mb-0.5"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  Terisi
-                </p>
-                <p
-                  className="font-semibold text-sm"
-                  style={{ color: "var(--coffee-latte)" }}
-                >
-                  79.5%
-                </p>
-              </div>
-              <span
-                className="text-[10px] px-2 py-px rounded"
-                style={{
-                  background: "rgba(196,136,47,0.12)",
-                  color: "var(--coffee-latte)",
-                  border: "0.5px solid rgba(196,136,47,0.4)",
-                }}
-              >
-                Akumulasi
-              </span>
-            </div>
-            <button
-              className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "0.5px solid var(--border-subtle)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              Detail
-            </button>
-          </div>
-          {/* Composition bar */}
+          + Buka Pool Baru
+        </button>
+      </div>
+      <div className="flex flex-col gap-2 mb-5">
+        {stockPools.length === 0 ? (
           <p
-            className="text-[10px] mb-1.5"
+            className="text-[11px] py-3 text-center"
             style={{ color: "var(--text-muted)" }}
           >
-            Komposisi dry weight dalam batch ini:
+            Belum ada pool stock dibuka.
           </p>
-          <div
-            className="flex rounded overflow-hidden gap-px"
-            style={{ height: "8px" }}
-          >
-            {COMP_PCTS.map((pct, i) => (
+        ) : (
+          stockPools.map((p) => {
+            const comp = compositions[p.id] ?? [];
+            const usage = stockUsage[p.id];
+            const usedKg = usage?.usedKg ?? 0;
+            const remainingKg = usage?.remainingKg ?? p.current_kg;
+            const pct =
+              p.threshold_kg > 0
+                ? Math.round((p.current_kg / p.threshold_kg) * 100)
+                : 0;
+            const canProduce = p.status === "full" && remainingKg > 0;
+            const poolCardState: CardState =
+              p.status === "accumulating"
+                ? "active"
+                : p.status === "used"
+                  ? "done"
+                  : "actionable"; // status "full" — siap diproduksi, butuh aksi
+            const poolCardStyle = CARD_STATE_STYLE[poolCardState];
+            return (
               <div
-                key={i}
+                key={p.id}
+                className="rounded-lg"
                 style={{
-                  width: `${pct}%`,
-                  background: COMP_COLORS[i],
-                  opacity: 0.8,
+                  background: poolCardStyle.background,
+                  border: poolCardStyle.border,
+                  padding: "13px 14px",
+                  opacity: poolCardStyle.opacity ?? 1,
                 }}
-                title={`${pct}%`}
-              />
-            ))}
-          </div>
-        </div>
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div>
+                    <span
+                      className="inline-block text-[10px] px-2 py-px rounded font-mono mb-1.5"
+                      style={{
+                        background: "rgba(196,136,47,0.12)",
+                        color: "var(--coffee-latte)",
+                        border: "0.5px solid rgba(196,136,47,0.4)",
+                      }}
+                    >
+                      {p.stock_code}
+                    </span>
+                    <p
+                      className="text-xs font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      Stock Batch — {comp.length} Partner
+                    </p>
+                    <p
+                      className="text-[10px] mt-0.5"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Threshold: {p.threshold_kg} kg · Terisi: {p.current_kg} kg
+                    </p>
+                    {/* FASE BC-4.1 — pemakaian produksi: dipakai berapa, sisa
+                        berapa, dan status habis/masih ada sisa */}
+                    <p
+                      className="text-[10px] mt-0.5"
+                      style={{
+                        color:
+                          p.status === "used"
+                            ? "var(--forest-sage)"
+                            : "var(--coffee-latte)",
+                      }}
+                    >
+                      {p.status === "used"
+                        ? `✓ Habis terpakai (${usedKg} kg untuk produksi)`
+                        : usedKg > 0
+                          ? `Terpakai ${usedKg} kg · Sisa ${remainingKg} kg untuk produksi`
+                          : p.status === "full"
+                            ? "Siap diproduksi"
+                            : "Masih menerima alokasi batch"}
+                    </p>
+                    {usage && usage.runs.length > 0 && (
+                      <p
+                        className="text-[10px] mt-0.5"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Dipakai untuk:{" "}
+                        {usage.runs
+                          .map(
+                            (r) =>
+                              `${PRODUCT_TYPE_LABEL[r.productType]} (${r.inputKg} kg)`,
+                          )
+                          .join(", ")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="ml-auto flex items-center gap-5">
+                    <div className="text-center">
+                      <p
+                        className="text-[10px] mb-0.5"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Terisi
+                      </p>
+                      <p
+                        className="font-semibold text-sm"
+                        style={{ color: "var(--coffee-latte)" }}
+                      >
+                        {pct}%
+                      </p>
+                    </div>
+                    <span
+                      className="text-[10px] px-2 py-px rounded"
+                      style={{
+                        background:
+                          poolCardState === "active"
+                            ? "var(--teal-bg)"
+                            : poolCardState === "done"
+                              ? "rgba(45,90,46,0.12)"
+                              : "rgba(196,136,47,0.12)",
+                        color:
+                          poolCardState === "active"
+                            ? "var(--teal)"
+                            : poolCardState === "done"
+                              ? "var(--forest-sage)"
+                              : "var(--coffee-latte)",
+                        border: `0.5px solid ${
+                          poolCardState === "active"
+                            ? "var(--teal-border)"
+                            : poolCardState === "done"
+                              ? "rgba(45,90,46,0.3)"
+                              : "rgba(196,136,47,0.4)"
+                        }`,
+                      }}
+                    >
+                      {p.status === "accumulating"
+                        ? "Akumulasi"
+                        : p.status === "full"
+                          ? "Penuh"
+                          : "Terpakai"}
+                    </span>
+                  </div>
+                  {canProduce && (
+                    <button
+                      onClick={() =>
+                        setModal({ type: "startProduction", stock: p })
+                      }
+                      className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
+                      style={{
+                        background: "var(--bg-elevated)",
+                        border: "0.5px solid var(--border-subtle)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      Mulai Produksi
+                    </button>
+                  )}
+                </div>
+                {comp.length > 0 && (
+                  <>
+                    <p
+                      className="text-[10px] mb-1.5"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Komposisi dry weight dalam batch ini:
+                    </p>
+                    <div
+                      className="flex rounded overflow-hidden gap-px"
+                      style={{ height: "8px" }}
+                    >
+                      {comp.map((c, i) => {
+                        const cPct =
+                          p.current_kg > 0
+                            ? (c.dryKgAllocated / p.current_kg) * 100
+                            : 0;
+                        return (
+                          <div
+                            key={i}
+                            style={{
+                              width: `${cPct}%`,
+                              background: compColors[i % compColors.length],
+                              opacity: 0.8,
+                            }}
+                            title={`${c.partnerOrganization}: ${c.dryKgAllocated} kg`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Stage 4 — Produksi */}
@@ -1012,90 +2127,157 @@ function BatchTab() {
         "rgba(45,90,46,0.08)",
       )}
       <div className="flex flex-col gap-2">
-        <div
-          className="flex items-center gap-3 rounded-lg"
-          style={{
-            background: "var(--bg-card)",
-            border: "0.5px solid var(--border-subtle)",
-            padding: "13px 14px",
-          }}
-        >
-          <div>
-            <span
-              className="inline-block text-[10px] px-2 py-px rounded font-mono mb-1.5"
-              style={{
-                background: "rgba(45,90,46,0.12)",
-                color: "var(--forest-sage)",
-                border: "0.5px solid rgba(45,90,46,0.3)",
-              }}
-            >
-              PRD-006
-            </span>
-            <p
-              className="text-xs font-medium"
-              style={{ color: "var(--text-primary)" }}
-            >
-              Produksi Mei — Stock Batch STK-007
-            </p>
-            <p
-              className="text-[10px] mt-0.5"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Input: 318 kg kering · Mulai 20 Mei 2026
-            </p>
-          </div>
-          <div className="ml-auto flex items-center gap-5">
-            <div className="text-center">
-              <p
-                className="text-[10px] mb-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Biochar
-              </p>
-              <p
-                className="font-semibold text-sm"
-                style={{ color: "var(--forest-sage)" }}
-              >
-                115 kg
-              </p>
-            </div>
-            <div className="text-center">
-              <p
-                className="text-[10px] mb-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Kompos
-              </p>
-              <p
-                className="font-semibold text-sm"
-                style={{ color: "var(--teal)" }}
-              >
-                85 kg
-              </p>
-            </div>
-            <span
-              className="text-[10px] px-2 py-px rounded"
-              style={{
-                background: "rgba(45,90,46,0.12)",
-                color: "var(--forest-sage)",
-                border: "0.5px solid rgba(45,90,46,0.3)",
-              }}
-            >
-              ✓ Selesai
-            </span>
-          </div>
-          <button
-            className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
-            style={{
-              background: "var(--bg-elevated)",
-              border: "0.5px solid var(--border-subtle)",
-              color: "var(--text-secondary)",
-            }}
+        {productionRuns.length === 0 ? (
+          <p
+            className="text-[11px] py-3 text-center"
+            style={{ color: "var(--text-muted)" }}
           >
-            Detail
-          </button>
-        </div>
+            Belum ada proses produksi tercatat.
+          </p>
+        ) : (
+          productionRuns.map((r) => {
+            const isProcessing = r.status === "processing";
+            return (
+              <div
+                key={r.id}
+                className="flex items-center gap-3 rounded-lg"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "0.5px solid var(--border-subtle)",
+                  padding: "13px 14px",
+                  opacity: isProcessing ? 1 : 0.75,
+                }}
+              >
+                <div>
+                  <span
+                    className="inline-block text-[10px] px-2 py-px rounded font-mono mb-1.5"
+                    style={{
+                      background: "rgba(45,90,46,0.12)",
+                      color: "var(--forest-sage)",
+                      border: "0.5px solid rgba(45,90,46,0.3)",
+                    }}
+                  >
+                    {r.run_code}
+                  </span>
+                  <p
+                    className="text-xs font-medium"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {PRODUCT_TYPE_LABEL[r.product_type]}
+                  </p>
+                  <p
+                    className="text-[10px] mt-0.5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Input: {r.input_kg} kg kering · Mulai{" "}
+                    {new Date(r.started_at).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
+                <div className="ml-auto flex items-center gap-5">
+                  <div className="text-center">
+                    <p
+                      className="text-[10px] mb-0.5"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {isProcessing ? "Status" : "Output"}
+                    </p>
+                    <p
+                      className="font-semibold text-sm"
+                      style={{ color: "var(--forest-sage)" }}
+                    >
+                      {isProcessing ? "Berlangsung" : `${r.output_kg} kg`}
+                    </p>
+                  </div>
+                </div>
+                {isProcessing && (
+                  <button
+                    onClick={() =>
+                      setModal({ type: "completeProduction", run: r })
+                    }
+                    className="flex-shrink-0 px-3 py-1.5 rounded text-[11px]"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      border: "0.5px solid var(--border-subtle)",
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    Selesaikan
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
+
+      {/* ── Modals ── */}
+      {modal?.type === "addBatch" && (
+        <AddBatchModal
+          eligibleStops={eligibleStops}
+          onClose={() => setModal(null)}
+          onSubmit={handleAddBatch}
+        />
+      )}
+      {modal?.type === "completeBatch" && (
+        <NumberPromptModal
+          title={`Selesaikan ${modal.batch.batch_code}`}
+          fieldLabel="Berat Kering (kg)"
+          onClose={() => setModal(null)}
+          onSubmit={(v) => handleCompleteBatch(modal.batch.id, v)}
+        />
+      )}
+      {modal?.type === "allocateStock" && (
+        <AllocateStockModal
+          batch={modal.batch}
+          remainingBatchKg={Number(
+            (
+              (modal.batch.output_dry_kg ?? 0) -
+              (allocatedTotals[modal.batch.id] ?? 0)
+            ).toFixed(1),
+          )}
+          stockPools={stockPools}
+          onClose={() => setModal(null)}
+          onSubmit={(stockBatchId, dryKg) =>
+            handleAllocate(modal.batch.id, stockBatchId, dryKg)
+          }
+        />
+      )}
+      {modal?.type === "openStock" && (
+        <OpenStockModal
+          onClose={() => setModal(null)}
+          onSubmit={handleOpenStock}
+        />
+      )}
+      {modal?.type === "startProduction" && (
+        <StartProductionModal
+          stock={modal.stock}
+          remainingKg={
+            stockUsage[modal.stock.id]?.remainingKg ?? modal.stock.current_kg
+          }
+          onClose={() => setModal(null)}
+          onSubmit={(productType, inputKg) =>
+            handleStartProduction(modal.stock.id, productType, inputKg)
+          }
+        />
+      )}
+      {modal?.type === "completeProduction" && (
+        <CompleteProductionModal
+          run={modal.run}
+          onClose={() => setModal(null)}
+          onSubmit={(outputKg, actualInputKg) =>
+            handleCompleteProduction(
+              modal.run.id,
+              outputKg,
+              actualInputKg,
+              modal.run.stock_batch_id,
+            )
+          }
+        />
+      )}
     </div>
   );
 }
@@ -1104,259 +2286,417 @@ function BatchTab() {
 // TAB 3 — Laporan Yield
 // ─────────────────────────────────────────────────────────────────────────────
 
-const YIELD_ROWS = [
-  {
-    partner: "Hotel Aryaduta",
-    type: "Hotel",
-    kec: "Ujung Pandang",
-    wet: 118,
-    dry: 78,
-    loss: "33.9%",
-    lossColor: "var(--color-error)",
-    stock: "18.4%",
-    biochar: "~21 kg",
-    kompos: "~16 kg",
-  },
-  {
-    partner: "Café Phoenam",
-    type: "Cafe",
-    kec: "Rappocini",
-    wet: 104,
-    dry: 65,
-    loss: "37.5%",
-    lossColor: "var(--coffee-latte)",
-    stock: "15.4%",
-    biochar: "~18 kg",
-    kompos: "~13 kg",
-  },
-  {
-    partner: "Anomali Coffee",
-    type: "Cafe",
-    kec: "Tamalate",
-    wet: 90,
-    dry: 54,
-    loss: "40.0%",
-    lossColor: "var(--coffee-latte)",
-    stock: "12.8%",
-    biochar: "~15 kg",
-    kompos: "~11 kg",
-  },
-  {
-    partner: "Hotel Sahid",
-    type: "Hotel",
-    kec: "Makassar",
-    wet: 80,
-    dry: 48,
-    loss: "40.0%",
-    lossColor: "var(--coffee-latte)",
-    stock: "11.3%",
-    biochar: "~13 kg",
-    kompos: "~10 kg",
-  },
-  {
-    partner: "Makassar Ramen House",
-    type: "Resto",
-    kec: "Rappocini",
-    wet: 70,
-    dry: 43,
-    loss: "38.6%",
-    lossColor: "var(--forest-sage)",
-    stock: "10.2%",
-    biochar: "~12 kg",
-    kompos: "~9 kg",
-  },
-];
-
 function YieldTab() {
-  const COL = "1.4fr 70px 70px 60px 60px 72px 72px 82px";
-  const TH = "text-[9px] uppercase tracking-wider";
+  const [rows, setRows] = useState<YieldReportRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const today = todayWITA();
+  const currentMonthValue = today.slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthValue);
+
+  // 6 bulan terakhir (termasuk bulan berjalan), paling baru duluan
+  const monthOptions = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(today + "T00:00:00Z");
+    d.setUTCMonth(d.getUTCMonth() - i);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    return {
+      value: `${y}-${m}`,
+      label: `${BULAN_PANJANG[d.getUTCMonth()]} ${y}`,
+    };
+  });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [y, m] = selectedMonth.split("-").map(Number);
+      const periodStart = `${selectedMonth}-01`;
+      const isCurrentMonth = selectedMonth === currentMonthValue;
+      const periodEnd = isCurrentMonth
+        ? addDays(today, 1) // eksklusif — sampai akhir hari ini
+        : m === 12
+          ? `${y + 1}-01-01`
+          : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+
+      const data = await fetchYieldReport(periodStart, periodEnd);
+      setRows(data);
+    } catch (err: any) {
+      reportError("BioConversionSection.YieldTab.load", err);
+      setError(err?.message ?? "Gagal memuat laporan yield");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedMonth, currentMonthValue, today]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const monthLabel =
+    monthOptions.find((m) => m.value === selectedMonth)?.label ?? selectedMonth;
+
+  // ── Export CSV — bulk (semua baris) ────────────────────────────────────
+  const exportCSV = () => {
+    if (rows.length === 0) return;
+    const headers = [
+      "Partner",
+      "Jenis Usaha",
+      "Kecamatan",
+      "Wet (kg)",
+      "Dry (kg)",
+      "Loss (%)",
+      "Stock Share (%)",
+      "Biochar (kg)",
+      "Kompos (kg)",
+      "Briket (kg)",
+      "Ecogoods (kg)",
+    ];
+    const lines = [
+      headers.join(","),
+      ...rows.map((r) =>
+        [
+          r.organization,
+          r.jenisUsaha,
+          r.kecamatan,
+          r.wetKg,
+          r.dryKg,
+          r.lossPct,
+          r.stockPct,
+          r.biocharKg,
+          r.komposKg,
+          r.briketKg,
+          r.ecogoodsKg,
+        ]
+          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+          .join(","),
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `yield-report-${selectedMonth}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Export PDF — generate LANGSUNG dari data (jsPDF), BUKAN window.print().
+  // window.print() merender halaman sungguhan (termasuk MobileGuard) di
+  // jendela print preview browser — kalau jendela itu sempit (<1024px),
+  // MobileGuard mengira layar kecil dan menampilkan "Buka di Desktop".
+  // jsPDF membangun PDF murni dari data, tidak menyentuh DOM/CSS halaman
+  // sama sekali, jadi langsung ter-download tanpa preview apa pun.
+  const exportPDF = () => {
+    if (rows.length === 0) return;
+    const doc = new jsPDF({ orientation: "landscape" });
+
+    doc.setFontSize(13);
+    doc.text(`Laporan Yield — ${monthLabel}`, 14, 15);
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(
+      "Atribusi produksi proporsional berdasarkan dry weight kontribusi ke stock",
+      14,
+      21,
+    );
+
+    autoTable(doc, {
+      startY: 26,
+      head: [
+        [
+          "Partner",
+          "Jenis Usaha",
+          "Kecamatan",
+          "Wet (kg)",
+          "Dry (kg)",
+          "Loss %",
+          "Stock %",
+          "Biochar",
+          "Kompos",
+          "Briket",
+          "Ecogoods",
+        ],
+      ],
+      body: rows.map((r) => [
+        r.organization,
+        r.jenisUsaha,
+        r.kecamatan,
+        r.wetKg,
+        r.dryKg,
+        `${r.lossPct}%`,
+        `${r.stockPct}%`,
+        r.biocharKg,
+        r.komposKg,
+        r.briketKg,
+        r.ecogoodsKg,
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [45, 90, 46] },
+      foot: [
+        [
+          `${rows.length} partner`,
+          "",
+          "",
+          totalWet.toFixed(1),
+          totalDry.toFixed(1),
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ],
+      ],
+      footStyles: { fillColor: [240, 240, 240], textColor: 40 },
+    });
+
+    doc.save(`yield-report-${selectedMonth}.pdf`);
+  };
+
+  // ── Loading / error ────────────────────────────────────────────────────
+  if (loading && rows.length === 0) {
+    return (
+      <div
+        className="rounded-lg animate-pulse"
+        style={{
+          background: "var(--bg-card)",
+          border: "0.5px solid var(--border-subtle)",
+          height: "320px",
+        }}
+      />
+    );
+  }
+
+  if (error && rows.length === 0) {
+    return (
+      <div
+        className="rounded-lg px-5 py-4 flex items-center gap-3"
+        style={{
+          background: "rgba(160,72,72,0.08)",
+          border: "0.5px solid rgba(160,72,72,0.3)",
+        }}
+      >
+        <i
+          className="fas fa-exclamation-triangle text-xs"
+          style={{ color: "var(--color-error)" }}
+        />
+        <p className="text-sm flex-1" style={{ color: "var(--color-error)" }}>
+          {error}
+        </p>
+        <button
+          onClick={load}
+          className="text-xs underline"
+          style={{ color: "var(--color-error)" }}
+        >
+          Coba lagi
+        </button>
+      </div>
+    );
+  }
+
+  const totalWet = rows.reduce((sum, r) => sum + r.wetKg, 0);
+  const totalDry = rows.reduce((sum, r) => sum + r.dryKg, 0);
 
   return (
     <div>
-      {/* Action bar */}
-      <div className="flex items-center gap-2 mb-4">
+      {/* Header: filter bulan + export */}
+      <div className="flex items-center justify-between mb-4">
         <select
-          className="rounded px-2.5 py-1.5 text-[11px] outline-none"
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          className="text-[11px] rounded px-3 py-1.5"
           style={{
-            background: "var(--bg-elevated)",
-            border: "0.5px solid var(--border-subtle)",
+            background: "var(--bg-card)",
+            border: "0.5px solid var(--border-default)",
             color: "var(--text-primary)",
           }}
         >
-          <option>Mei 2026</option>
-          <option>April 2026</option>
-        </select>
-        <div
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px]"
-          style={{
-            background: "rgba(196,136,47,0.08)",
-            border: "0.5px solid rgba(196,136,47,0.3)",
-            color: "var(--coffee-latte)",
-          }}
-        >
-          ⚡ Atribusi produksi = proporsional berdasarkan dry weight kontribusi
-          ke stock
-        </div>
-        <div className="ml-auto flex gap-2">
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px]"
-            style={{
-              background: "var(--bg-card)",
-              border: "0.5px solid var(--border-subtle)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <i className="fas fa-file-csv text-[9px]" /> Export Semua CSV
-          </button>
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px]"
-            style={{
-              background: "var(--coffee-latte)",
-              color: "var(--bg-primary)",
-              border: "none",
-            }}
-          >
-            <i className="fas fa-file-pdf text-[9px]" /> Export PDF
-          </button>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div
-        className="rounded-lg overflow-hidden"
-        style={{ border: "0.5px solid var(--border-subtle)" }}
-      >
-        {/* Header */}
-        <div
-          className="grid px-3 py-2.5"
-          style={{
-            gridTemplateColumns: COL,
-            background: "var(--bg-elevated)",
-            borderBottom: "0.5px solid var(--border-subtle)",
-          }}
-        >
-          {[
-            "Partner",
-            "Wet kg",
-            "Dry kg",
-            "Loss%",
-            "Stock%",
-            "Biochar",
-            "Kompos",
-            "",
-          ].map((h, i) => (
-            <div
-              key={i}
-              className={cn(TH, i > 0 && i < 7 ? "text-right" : "")}
-              style={{
-                color: "var(--text-muted)",
-                fontFamily: "var(--font-space-mono)",
-              }}
-            >
-              {h}
-            </div>
+          {monthOptions.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
           ))}
-        </div>
+        </select>
 
-        {/* Rows */}
-        {YIELD_ROWS.map((r) => (
-          <div
-            key={r.partner}
-            className="grid px-3 py-2.5 items-center cursor-pointer transition-all"
-            style={{
-              gridTemplateColumns: COL,
-              borderBottom: "0.5px solid var(--border-subtle)",
-              background: "var(--bg-card)",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.background = "var(--bg-elevated)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.background = "var(--bg-card)")
-            }
-          >
-            <div>
-              <p
-                className="text-xs font-medium"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {r.partner}
-              </p>
-              <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                {r.type} · Kec. {r.kec}
-              </p>
-            </div>
-            <div
-              className="text-right text-xs"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              {r.wet} kg
-            </div>
-            <div
-              className="text-right text-xs font-medium"
-              style={{ color: "var(--text-primary)" }}
-            >
-              {r.dry} kg
-            </div>
-            <div className="text-right text-xs" style={{ color: r.lossColor }}>
-              {r.loss}
-            </div>
-            <div
-              className="text-right text-xs font-medium"
-              style={{ color: "var(--coffee-latte)" }}
-            >
-              {r.stock}
-            </div>
-            <div
-              className="text-right text-xs"
-              style={{ color: "var(--forest-sage)" }}
-            >
-              {r.biochar}
-            </div>
-            <div
-              className="text-right text-xs"
-              style={{ color: "var(--teal)" }}
-            >
-              {r.kompos}
-            </div>
-            <div className="text-right">
-              <button
-                className="px-2 py-1 rounded text-[10px]"
-                style={{
-                  background: "var(--bg-elevated)",
-                  border: "0.5px solid var(--border-subtle)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                <i className="fas fa-file-pdf text-[9px] mr-1" /> Export
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {/* Footer */}
-        <div
-          className="flex items-center justify-between px-3 py-2.5"
-          style={{
-            background: "var(--bg-elevated)",
-            borderTop: "0.5px solid var(--border-subtle)",
-          }}
-        >
-          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            Menampilkan 5 dari 24 partner · Total 682 kg basah → 423 kg kering
-          </span>
+        <div className="flex gap-2">
           <button
-            className="text-[11px] px-3 py-1.5 rounded"
+            onClick={exportCSV}
+            disabled={rows.length === 0}
+            className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40"
             style={{
-              background: "var(--bg-card)",
+              background: "var(--bg-elevated)",
               border: "0.5px solid var(--border-subtle)",
               color: "var(--text-secondary)",
             }}
           >
-            Lihat semua partner →
+            <i className="fas fa-file-csv text-[10px] mr-1.5" /> Export CSV
+          </button>
+          <button
+            onClick={exportPDF}
+            disabled={rows.length === 0}
+            className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40"
+            style={{
+              background: "var(--bg-elevated)",
+              border: "0.5px solid var(--border-subtle)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <i className="fas fa-print text-[10px] mr-1.5" /> Export PDF
           </button>
         </div>
       </div>
+
+      {/* Note atribusi — dipertahankan dari mock asli, masih relevan */}
+      <p className="text-[10px] mb-3" style={{ color: "var(--text-muted)" }}>
+        ⚡ Atribusi produksi = proporsional berdasarkan dry weight kontribusi ke
+        stock — {monthLabel}
+      </p>
+
+      {rows.length === 0 ? (
+        <div
+          className="rounded-lg py-12 text-center"
+          style={{
+            background: "var(--bg-card)",
+            border: "0.5px solid var(--border-subtle)",
+          }}
+        >
+          <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+            Belum ada batch selesai di periode ini.
+          </p>
+        </div>
+      ) : (
+        <div
+          className="rounded-lg overflow-x-auto"
+          style={{
+            background: "var(--bg-card)",
+            border: "0.5px solid var(--border-subtle)",
+          }}
+        >
+          <table className="w-full text-[11px]" style={{ minWidth: "820px" }}>
+            <thead>
+              <tr style={{ borderBottom: "0.5px solid var(--border-subtle)" }}>
+                {[
+                  "Partner",
+                  "Jenis Usaha",
+                  "Wet (kg)",
+                  "Dry (kg)",
+                  "Loss %",
+                  "Stock %",
+                  "Biochar",
+                  "Kompos",
+                  "Briket",
+                  "Ecogoods",
+                ].map((h, i) => (
+                  <th
+                    key={h}
+                    className={`px-3 py-2.5 font-mono uppercase tracking-wider ${i === 0 ? "text-left" : "text-right"}`}
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: "9px",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr
+                  key={r.partnerId}
+                  style={{ borderBottom: "0.5px solid var(--border-subtle)" }}
+                >
+                  <td className="px-3 py-2.5">
+                    <p
+                      className="font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {r.organization}
+                    </p>
+                    <p
+                      className="text-[9px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {r.kecamatan}
+                    </p>
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {r.jenisUsaha}
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {r.wetKg}
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right font-medium"
+                    style={{ color: "var(--coffee-latte)" }}
+                  >
+                    {r.dryKg}
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {r.lossPct}%
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--teal)" }}
+                  >
+                    {r.stockPct}%
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--forest-sage)" }}
+                  >
+                    {r.biocharKg}
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--teal)" }}
+                  >
+                    {r.komposKg}
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "#d4783a" }}
+                  >
+                    {r.briketKg}
+                  </td>
+                  <td
+                    className="px-3 py-2.5 text-right"
+                    style={{ color: "var(--gold)" }}
+                  >
+                    {r.ecogoodsKg}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div
+            className="flex items-center justify-between px-3 py-2.5"
+            style={{ borderTop: "0.5px solid var(--border-subtle)" }}
+          >
+            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              {rows.length} partner berkontribusi di {monthLabel}
+            </p>
+            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              Total: {totalWet.toFixed(1)} kg basah → {totalDry.toFixed(1)} kg
+              kering
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1365,8 +2705,105 @@ function YieldTab() {
 // BioConversionSection — main export
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Label bulan Indonesia — lokal ke file ini (bukan reuse internal date.ts
+// yang tidak meng-export array bulan).
+const BULAN_PANJANG = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
 export default function BioConversionSection() {
   const [activeTab, setActiveTab] = useState<SubTab>("dashboard");
+
+  // ── FASE BC-2 — KPI summary bulan berjalan (tanggal 1 s.d. hari ini) ───────
+  const [summary, setSummary] = useState<BioKpiSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  const today = todayWITA();
+  const periodStart = today.slice(0, 8) + "01";
+  const [year, month] = today.split("-");
+  const monthLabel = `${BULAN_PANJANG[Number(month) - 1]} ${year}`;
+
+  const loadSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      const data = await fetchBioKpiSummary(periodStart, today);
+      setSummary(data);
+    } catch (err: any) {
+      reportError("BioConversionSection.loadSummary", err);
+      setSummaryError(err?.message ?? "Gagal memuat ringkasan Bio-Conversion");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [periodStart, today]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  // ── FASE BC-3 — data untuk Pipeline (badge) + DashboardTab ─────────────────
+  const [activeBatches, setActiveBatches] = useState<BatchWithPartner[]>([]);
+  const [partnerBreakdown, setPartnerBreakdown] = useState<
+    PartnerContribution[]
+  >([]);
+  const [stockPools, setStockPools] = useState<StockBatch[]>([]);
+  const [productionByType, setProductionByType] = useState({
+    biochar: 0,
+    kompos: 0,
+  });
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  const loadDashboardData = useCallback(async () => {
+    setDashboardLoading(true);
+    setDashboardError(null);
+    try {
+      const [batches, partners, accumulating, full, doneRuns] =
+        await Promise.all([
+          fetchActiveBatches(),
+          fetchPartnerContributionBreakdown(periodStart, today),
+          fetchStockBatches({ status: "accumulating" }),
+          fetchStockBatches({ status: "full" }),
+          fetchProductionRuns({ status: "done" }),
+        ]);
+
+      setActiveBatches(batches);
+      setPartnerBreakdown(partners);
+      setStockPools([...accumulating, ...full]);
+
+      const biochar = doneRuns
+        .filter((r) => r.product_type === "biochar")
+        .reduce((sum, r) => sum + (r.output_kg ?? 0), 0);
+      const kompos = doneRuns
+        .filter((r) => r.product_type === "kompos")
+        .reduce((sum, r) => sum + (r.output_kg ?? 0), 0);
+      setProductionByType({
+        biochar: Number(biochar.toFixed(1)),
+        kompos: Number(kompos.toFixed(1)),
+      });
+    } catch (err: any) {
+      reportError("BioConversionSection.loadDashboardData", err);
+      setDashboardError(err?.message ?? "Gagal memuat data dashboard");
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [periodStart, today]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   return (
     <div>
@@ -1374,21 +2811,45 @@ export default function BioConversionSection() {
       <div className="dash-section-header">
         <h2 className="dash-section-title">Bio Conversion</h2>
         <p className="dash-section-sub">
-          682 kg pickup · 423 kg kering · 200 kg produksi — Mei 2026
+          {summary
+            ? `${summary.totalPickupKg} kg pickup · ${summary.totalDryKg} kg kering · ${summary.totalProductionKg} kg produksi — ${monthLabel}`
+            : `Memuat ringkasan — ${monthLabel}`}
         </p>
       </div>
 
       {/* KPI */}
-      <KpiRow />
+      <KpiRow
+        summary={summary}
+        loading={summaryLoading}
+        error={summaryError}
+        onRetry={loadSummary}
+      />
 
       {/* Pipeline */}
-      <Pipeline />
+      <Pipeline
+        summary={summary}
+        activeBatchCount={activeBatches.length}
+        activeStockCount={stockPools.length}
+        productionByType={productionByType}
+        monthLabel={monthLabel}
+      />
 
       {/* Sub-tab navigation */}
       <SubTabBar active={activeTab} onChange={setActiveTab} />
 
       {/* Tab content */}
-      {activeTab === "dashboard" && <DashboardTab />}
+      {activeTab === "dashboard" && (
+        <DashboardTab
+          summary={summary}
+          activeBatches={activeBatches}
+          partnerBreakdown={partnerBreakdown}
+          productionByType={productionByType}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={loadDashboardData}
+          monthLabel={monthLabel}
+        />
+      )}
       {activeTab === "batch" && <BatchTab />}
       {activeTab === "yield" && <YieldTab />}
     </div>

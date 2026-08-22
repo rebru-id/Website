@@ -551,15 +551,34 @@ function StepButton({
 
 interface InlineFormProps {
   stop: RouteStop;
-  nextStopName: string | null;
   onSubmit: (data: StopFormData) => void;
   onSkip: (reason: string) => void;
 }
 
-function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
-  const [form, setForm] = useState<StopFormData>({
-    ...DEFAULT_FORM_DATA,
-    qty: stop.estimated_kg,
+function InlineForm({ stop, onSubmit, onSkip }: InlineFormProps) {
+  // Fix — baca draft localStorage langsung di lazy initializer, BUKAN lewat
+  // useEffect terpisah. Sebelumnya ada dua useEffect (simpan & restore) yang
+  // race: efek "simpan" jalan lebih dulu dengan nilai default kosong,
+  // menimpa draft lama di localStorage SEBELUM efek "restore" sempat
+  // membacanya balik — akibatnya draft yang sudah diisi collector hilang
+  // setiap kali InlineForm ini di-mount ulang. Dengan lazy initializer,
+  // draft dibaca sekali di awal, tidak ada window race sama sekali.
+  const [form, setForm] = useState<StopFormData>(() => {
+    const base: StopFormData = { ...DEFAULT_FORM_DATA, qty: stop.estimated_kg };
+    if (typeof window === "undefined") return base;
+    try {
+      const raw = localStorage.getItem(`rebru_draft_${stop.id}`);
+      if (!raw) return base;
+      const draft = JSON.parse(raw);
+      return {
+        ...base,
+        qty: draft.qty ?? stop.estimated_kg,
+        condition: draft.condition ?? null,
+        notes: draft.notes ?? "",
+      };
+    } catch {
+      return base;
+    }
   });
   const [showSkipSheet, setShowSkipSheet] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
@@ -640,24 +659,6 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     }
   }, [form.qty, form.condition, form.notes, stop.id]);
 
-  useEffect(() => {
-    // Fix 2 — SSR guard
-    if (typeof window === "undefined") return;
-    const raw = localStorage.getItem(`rebru_draft_${stop.id}`);
-    if (!raw) return;
-    try {
-      const draft = JSON.parse(raw);
-      setForm((prev) => ({
-        ...prev,
-        qty: draft.qty ?? stop.estimated_kg,
-        condition: draft.condition ?? null,
-        notes: draft.notes ?? "",
-      }));
-    } catch {
-      /* invalid draft */
-    }
-  }, [stop.id, stop.estimated_kg]);
-
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -720,11 +721,12 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
     outline: "none",
   };
 
-  // Fix #7 — pakai nomor stop bukan nama mitra agar tidak overflow
-  const nextStopOrder = nextStopName ? stop.order + 1 : null;
-  const ctaLabel = nextStopOrder
-    ? `Simpan & Lanjut ke Stop ${nextStopOrder} →`
-    : "Simpan & Selesaikan Rute";
+  // Label CTA sengaja dibuat generik — TIDAK menyebut nomor/nama stop
+  // berikutnya. Sebelumnya label dihitung dari `stop.order + 1`, yang salah
+  // kalau urutan pengambilan tidak berurut (ada stop yang di-skip/dilompati).
+  // Info "lanjut ke mana" tidak krusial buat collector, jadi dihilangkan
+  // saja — cukup konfirmasi bahwa data tersimpan.
+  const ctaLabel = "Simpan Data Pengambilan →";
 
   return (
     <div
@@ -1328,7 +1330,6 @@ function InlineForm({ stop, nextStopName, onSubmit, onSkip }: InlineFormProps) {
 interface RouteCardProps {
   stop: RouteStop;
   isActive: boolean;
-  nextStop: RouteStop | null;
   onToggle: () => void;
   onSubmit: (data: StopFormData) => void;
   onSkip: (reason: string) => void;
@@ -1337,7 +1338,6 @@ interface RouteCardProps {
 function RouteCard({
   stop,
   isActive,
-  nextStop,
   onToggle,
   onSubmit,
   onSkip,
@@ -1457,12 +1457,7 @@ function RouteCard({
       </div>
 
       {isActive && isPending && (
-        <InlineForm
-          stop={stop}
-          nextStopName={nextStop?.mitra_name ?? null}
-          onSubmit={onSubmit}
-          onSkip={onSkip}
-        />
+        <InlineForm stop={stop} onSubmit={onSubmit} onSkip={onSkip} />
       )}
     </div>
   );
@@ -1491,10 +1486,15 @@ export default function RouteSection({
   onHeroAction,
 }: RouteSectionProps) {
   const [stops, setStops] = useState<RouteStop[]>(initialStops);
-  const [activeStopId, setActiveStopId] = useState<string | null>(() => {
-    return initialStops.find((s) => s.status === "pending")?.id ?? null;
-  });
-  const [heroFormOpen, setHeroFormOpen] = useState(false);
+  // Fix — activeStopId TIDAK lagi auto-terisi stop pending pertama saat
+  // mount. Sebelumnya ini membuat form stop pertama otomatis terbuka di
+  // route list padahal collector belum memilih apa pun — bertabrakan
+  // dengan tombol "Mulai Catat →" di hero card yang menampilkan CTA
+  // seolah form belum terbuka. Sekarang: tidak ada form yang terbuka
+  // sampai collector benar-benar menekan salah satu (hero ATAU stop lain
+  // di list) — dan hero & route list berbagi satu state yang sama ini,
+  // jadi tidak mungkin ada dua form untuk stop yang sama terbuka sekaligus.
+  const [activeStopId, setActiveStopId] = useState<string | null>(null);
   // Fix #9 — undo state: UI sudah update, DB commit tertunda 10 detik
   const [undoState, setUndoState] = useState<{
     stopId: string;
@@ -1521,8 +1521,6 @@ export default function RouteSection({
 
   function handleToggle(stopId: string) {
     setActiveStopId((prev) => (prev === stopId ? null : stopId));
-    // Menutup hero form jika collector membuka stop dari route list
-    setHeroFormOpen(false);
   }
 
   // Fix #9 — applyWithUndo: update UI segera, commit DB setelah 10d
@@ -1536,12 +1534,11 @@ export default function RouteSection({
     // Jika ada undo pending sebelumnya, langsung confirm dulu
     if (undoState) undoState.onConfirm();
     updateStops(updated);
-    setHeroFormOpen(false);
-    const currentIdx = updated.findIndex((s) => s.id === stopId);
-    const nextPending = updated
-      .slice(currentIdx + 1)
-      .find((s) => s.status === "pending");
-    setActiveStopId(nextPending?.id ?? null);
+    // Fix — sebelumnya baris ini auto-membuka form stop pending berikutnya
+    // begitu satu stop selesai disubmit/skip. Prinsipnya sama dengan bug
+    // auto-open saat mount: jangan pernah buka form tanpa collector
+    // memilihnya sendiri — bisa jadi mereka justru mau ke partner lain.
+    setActiveStopId(null);
     setUndoState({
       stopId,
       prevStop,
@@ -1600,7 +1597,6 @@ export default function RouteSection({
     );
     setStops(restored);
     setActiveStopId(undoState.stopId);
-    setHeroFormOpen(false);
     setUndoState(null);
   }
 
@@ -1757,118 +1753,121 @@ export default function RouteSection({
         (disorienting scroll, terutama di mobile)
         Sekarang: form muncul tepat di dalam blok hero card ini sendiri
       */}
-      {nextPendingStop && (
-        <div
-          className="mb-5 rounded-lg overflow-hidden"
-          style={{
-            background: "var(--bg-card)",
-            border: `1px solid ${heroFormOpen ? "var(--coffee-latte)" : "var(--border-default)"}`,
-          }}
-        >
-          {/* Label */}
-          <div
-            className="px-4 py-2 flex items-center justify-between"
-            style={{ background: "rgba(196,149,106,0.08)" }}
-          >
-            <span
-              className="font-mono text-[0.62rem] tracking-[0.12em] uppercase"
-              style={{ color: "var(--coffee-latte)" }}
-            >
-              Stop berikutnya
-            </span>
-            <span
-              className="font-mono text-[0.62rem] tracking-[0.1em]"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Stop {nextPendingStop.order} dari {stops.length}
-            </span>
-          </div>
-
-          {/* Info stop */}
-          <div className="px-4 py-3">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-[1rem] font-semibold text-text-primary truncate">
-                  {nextPendingStop.mitra_name}
-                </p>
-                <p className="text-[0.78rem] text-text-muted mt-0.5 truncate">
-                  {nextPendingStop.address}
-                </p>
-              </div>
-              <CategoryPill cat={nextPendingStop.mitra_category} />
-            </div>
-
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-1.5">
-                <i
-                  className="fas fa-clock text-[0.65rem]"
-                  style={{ color: "var(--text-muted)" }}
-                />
-                <span
-                  className="font-mono text-[0.72rem]"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {nextPendingStop.scheduled_time || "—"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <i
-                  className="fas fa-weight-hanging text-[0.65rem]"
-                  style={{ color: "var(--text-muted)" }}
-                />
-                <span
-                  className="font-mono text-[0.72rem]"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  ~{nextPendingStop.estimated_kg} kg
-                </span>
-              </div>
-            </div>
-
-            {/* REC 4 — CTA: toggle form di dalam hero card, bukan scroll ke route list */}
-            {!heroFormOpen && (
-              <button
-                onClick={() => {
-                  setHeroFormOpen(true);
-                  // Sync route list agar stop ini tidak terbuka dua kali
-                  setActiveStopId(null);
-                  onHeroAction?.(nextPendingStop.id);
-                }}
-                className="w-full py-3 rounded-md text-[0.85rem] font-medium tracking-[0.03em] transition-all duration-200 hover:-translate-y-0.5"
-                style={{
-                  background: "var(--coffee-latte)",
-                  color: "var(--bg-primary)",
-                  border: "none",
-                }}
-              >
-                Mulai Catat →
-              </button>
-            )}
-          </div>
-
-          {/* REC 4 — InlineForm muncul di dalam hero card (proximity terjaga) */}
-          {heroFormOpen && (
+      {nextPendingStop &&
+        (() => {
+          const isOpenHere = activeStopId === nextPendingStop.id;
+          return (
             <div
-              className="border-t"
-              style={{ borderColor: "rgba(196,149,106,0.2)" }}
+              className="mb-5 rounded-lg overflow-hidden"
+              style={{
+                background: "var(--bg-card)",
+                border: `1px solid ${isOpenHere ? "var(--coffee-latte)" : "var(--border-default)"}`,
+              }}
             >
-              <InlineForm
-                stop={nextPendingStop}
-                nextStopName={
-                  stops
-                    .filter(
-                      (s) =>
-                        s.status === "pending" && s.id !== nextPendingStop.id,
-                    )
-                    .sort((a, b) => a.order - b.order)[0]?.mitra_name ?? null
-                }
-                onSubmit={(data) => handleSubmit(nextPendingStop.id, data)}
-                onSkip={(reason) => handleSkip(nextPendingStop.id, reason)}
-              />
+              {/* Label */}
+              <div
+                className="px-4 py-2 flex items-center justify-between"
+                style={{ background: "rgba(196,149,106,0.08)" }}
+              >
+                <span
+                  className="font-mono text-[0.62rem] tracking-[0.12em] uppercase"
+                  style={{ color: "var(--coffee-latte)" }}
+                >
+                  Stop berikutnya
+                </span>
+                <span
+                  className="font-mono text-[0.62rem] tracking-[0.1em]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Stop {nextPendingStop.order} dari {stops.length}
+                </span>
+              </div>
+
+              {/* Info stop */}
+              <div className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[1rem] font-semibold text-text-primary truncate">
+                      {nextPendingStop.mitra_name}
+                    </p>
+                    <p className="text-[0.78rem] text-text-muted mt-0.5 truncate">
+                      {nextPendingStop.address}
+                    </p>
+                  </div>
+                  <CategoryPill cat={nextPendingStop.mitra_category} />
+                </div>
+
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="flex items-center gap-1.5">
+                    <i
+                      className="fas fa-clock text-[0.65rem]"
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                    <span
+                      className="font-mono text-[0.72rem]"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {nextPendingStop.scheduled_time || "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <i
+                      className="fas fa-weight-hanging text-[0.65rem]"
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                    <span
+                      className="font-mono text-[0.72rem]"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      ~{nextPendingStop.estimated_kg} kg
+                    </span>
+                  </div>
+                </div>
+
+                {/*
+                  Fix — hero TIDAK lagi merender InlineForm sendiri.
+                  Klik di sini hanya men-trigger `activeStopId` yang SAMA
+                  dipakai route list di bawah, lalu scroll ke kartunya.
+                  Jadi hanya ada SATU instance InlineForm untuk stop ini,
+                  di mana pun collector membukanya — tidak ada lagi
+                  unmount/remount yang menghapus draft yang sudah diisi.
+                */}
+                <button
+                  onClick={() => {
+                    if (!isOpenHere) {
+                      setActiveStopId(nextPendingStop.id);
+                      onHeroAction?.(nextPendingStop.id);
+                    }
+                    // Selalu scroll ke kartunya — baik baru dibuka maupun
+                    // sudah terbuka (idempotent, tidak pernah menutup form).
+                    setTimeout(() => {
+                      document
+                        .getElementById(`stop-card-${nextPendingStop.id}`)
+                        ?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                    }, 50);
+                  }}
+                  className="w-full py-3 rounded-md text-[0.85rem] font-medium tracking-[0.03em] transition-all duration-200 hover:-translate-y-0.5"
+                  style={{
+                    background: isOpenHere
+                      ? "transparent"
+                      : "var(--coffee-latte)",
+                    color: isOpenHere
+                      ? "var(--coffee-latte)"
+                      : "var(--bg-primary)",
+                    border: isOpenHere
+                      ? "1px solid var(--coffee-latte)"
+                      : "none",
+                  }}
+                >
+                  {isOpenHere ? "Form terbuka di bawah ↓" : "Mulai Catat →"}
+                </button>
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          );
+        })()}
 
       {/* Route list */}
       <div>
@@ -1881,23 +1880,17 @@ export default function RouteSection({
         </p>
 
         <div className="flex flex-col gap-1.5">
-          {stops.map((stop, idx) => {
-            const nextPending = stops
-              .slice(idx + 1)
-              .find((s) => s.status === "pending");
-            return (
-              <div key={stop.id} id={`stop-card-${stop.id}`}>
-                <RouteCard
-                  stop={stop}
-                  isActive={activeStopId === stop.id}
-                  nextStop={nextPending ?? null}
-                  onToggle={() => handleToggle(stop.id)}
-                  onSubmit={(data) => handleSubmit(stop.id, data)}
-                  onSkip={(reason) => handleSkip(stop.id, reason)}
-                />
-              </div>
-            );
-          })}
+          {stops.map((stop) => (
+            <div key={stop.id} id={`stop-card-${stop.id}`}>
+              <RouteCard
+                stop={stop}
+                isActive={activeStopId === stop.id}
+                onToggle={() => handleToggle(stop.id)}
+                onSubmit={(data) => handleSubmit(stop.id, data)}
+                onSkip={(reason) => handleSkip(stop.id, reason)}
+              />
+            </div>
+          ))}
         </div>
 
         {/* Completion banner — hanya tampil setelah undo window tutup */}

@@ -13,7 +13,40 @@
 // Data: mock static, ported dari rebru_dashboard_v2.html
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import {
+  fetchEsgKpiSummary,
+  getMonthRangeISO,
+  type EsgKpiSummary,
+  fetchEsgPartnerBreakdownBasic,
+  type EsgPartnerBreakdownBasic,
+  fetchEsgPartnerProductionBreakdown,
+  type EsgPartnerProductionBreakdown,
+  fetchEsgMaterialBreakdown,
+  type EsgMaterialBreakdown,
+  fetchEsgComplianceChecklist,
+  updateEsgComplianceDone,
+  type EsgComplianceItem,
+  fetchEsgReportPeriodLock,
+  lockEsgReportPeriod,
+  type EsgReportPeriodLock,
+  fetchEsgPartnerDetail,
+  type EsgPartnerDetail,
+  fetchEsgPartnerPickupStops,
+  type EsgPartnerPickupStop,
+} from "@/lib/supabase-esg";
+
+import {
+  createReportDoc,
+  addSectionTitle,
+  addKpiGrid,
+  addTable,
+  addDisclaimer,
+  downloadReport,
+} from "@/lib/pdf-report";
+
+import { useDashToast } from "@/components/dashboard/DashToastContext";
+import { reportError } from "@/lib/report-error";
 import { cn } from "@/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,33 +94,90 @@ function SubTabBar({
 // KPI Row
 // ─────────────────────────────────────────────────────────────────────────────
 
-function KpiRow() {
+function KpiRow({
+  summary,
+  loading,
+  error,
+}: {
+  summary: EsgKpiSummary | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="dash-kpi-grid">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="rounded-lg"
+            style={{
+              background: "var(--bg-card)",
+              border: "0.5px solid var(--border-subtle)",
+              padding: "14px 16px",
+            }}
+          >
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              Memuat...
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (error || !summary) {
+    return (
+      <div
+        className="rounded-lg mb-4"
+        style={{
+          background: "var(--bg-card)",
+          border: "0.5px solid var(--border-subtle)",
+          padding: "14px 16px",
+          color: "var(--text-muted)",
+        }}
+      >
+        Gagal memuat data ESG.{error ? ` (${error})` : ""}
+      </div>
+    );
+  }
+
+  const co2eSub =
+    !summary.biocharFactorDefined && !summary.komposFactorDefined
+      ? "Faktor emisi belum ditetapkan"
+      : !summary.komposFactorDefined
+        ? "Kompos belum dihitung — faktor belum ada"
+        : "IPCC 2006 · perlu validasi";
+
   const kpis = [
     {
       label: "Total Diproses",
-      value: "6.75 ton",
-      sub: "24 partner · Mei 2026",
+      value: `${(summary.totalPickupKg / 1000).toFixed(2)} ton`,
+      sub: `${summary.mitraTracked} partner · periode ini`,
       color: "var(--coffee-latte)",
     },
     {
       label: "Didaur Ulang",
-      value: "4.82 ton",
-      sub: "SDG 12.5.1(a) · 71.4%",
+      value: `${(summary.totalDryKg / 1000).toFixed(2)} ton`,
+      sub:
+        summary.totalPickupKg > 0
+          ? `${((summary.totalDryKg / summary.totalPickupKg) * 100).toFixed(1)}% dari total pickup`
+          : "—",
       color: "var(--forest-sage)",
     },
     {
       label: "CO₂e Dihindari",
-      value: "6.43 ton",
-      sub: "IPCC 2006 · perlu validasi",
+      value: `${(summary.totalCo2eKg / 1000).toFixed(2)} ton`,
+      sub: co2eSub,
       color: "var(--teal)",
     },
     {
       label: "Partner Terlacak",
-      value: "24 / 24",
-      sub: "100% traceability",
+      value: `${summary.mitraTracked}`,
+      sub: "batch selesai periode ini",
       color: "var(--text-primary)",
     },
   ];
+
   return (
     <div className="dash-kpi-grid">
       {kpis.map((k) => (
@@ -133,89 +223,283 @@ function KpiRow() {
 // TAB 1 — Ringkasan Periode
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RingkasanTab() {
-  const [locked, setLocked] = useState(false);
+function RingkasanTab({
+  kpi,
+  materials,
+  loading,
+  error,
+  yearMonth,
+  periodStart,
+  periodEnd,
+}: {
+  kpi: EsgKpiSummary | null;
+  materials: EsgMaterialBreakdown[];
+  loading: boolean;
+  error: string | null;
+  yearMonth: string;
+  periodStart: string;
+  periodEnd: string;
+}) {
+  const [lockInfo, setLockInfo] = useState<EsgReportPeriodLock | null>(null);
+  const [checkingLock, setCheckingLock] = useState(true);
+  const [locking, setLocking] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
 
-  // 4 metric cards config
-  const METRICS = [
-    {
-      dot: "var(--forest-sage)",
-      code: "SDG 12.5.1(a) — Perpres 111/2022",
-      title: "Timbulan Sampah Didaur Ulang",
-      value: "4.82",
-      unit: "ton / bulan",
-      valueColor: "var(--forest-sage)",
-      delta: "↑ +12% vs Apr",
-      deltaColor: "var(--forest-sage)",
-      deltaBg: "rgba(45,90,46,0.12)",
-      deltaBorder: "rgba(45,90,46,0.3)",
-      sub: [
-        { label: "Organik", val: "3.14 ton" },
-        { label: "Non-Organik", val: "1.68 ton" },
-        { label: "Rasio daur ulang", val: "71.4% dari total" },
-        { label: "Target KLHK 2025", val: "Reduksi 30%" },
-      ],
-    },
-    {
-      dot: "var(--teal)",
-      code: "SDG 12.3.1(a) — SIPSN",
-      title: "Persentase Sisa Makanan (Food Waste)",
-      value: "38.2",
-      unit: "%",
-      valueColor: "var(--teal)",
-      delta: "↓ -3.1% vs Apr",
-      deltaColor: "var(--forest-sage)",
-      deltaBg: "rgba(45,90,46,0.12)",
-      deltaBorder: "rgba(45,90,46,0.3)",
-      sub: [
-        { label: "Volume food waste", val: "1.84 ton" },
-        { label: "Dikompos", val: "1.21 ton" },
-        { label: "Target SDG 2030", val: "Kurangi 50%" },
-        { label: "Metodologi", val: "FAO food waste index" },
-      ],
-    },
-    {
-      dot: "var(--gold)",
-      code: "GHG Protocol — Emisi Dihindari",
-      title: "Setara CO₂ Tidak Terlepas ke Atmosfer",
-      value: "6.43",
-      unit: "ton CO₂e",
-      valueColor: "var(--gold)",
-      delta: "↑ +8% vs Apr",
-      deltaColor: "var(--forest-sage)",
-      deltaBg: "rgba(45,90,46,0.12)",
-      deltaBorder: "rgba(45,90,46,0.3)",
-      sub: [
-        { label: "Dari komposting", val: "3.82 ton CO₂e" },
-        { label: "Dari daur ulang", val: "2.61 ton CO₂e" },
-        { label: "Metodologi", val: "IPCC 2006" },
-        { label: "⚠ Validasi", val: "Perlu ahli lingk.", isWarn: true },
-      ],
-    },
-    {
-      dot: "var(--coffee-latte)",
-      code: "SDG 12.4.2 — Total Volume Diproses",
-      title: "Semua Jenis Limbah Ditangani",
-      value: "6.75",
-      unit: "ton / bulan",
-      valueColor: "var(--coffee-latte)",
-      delta: "↑ +5% vs Apr",
-      deltaColor: "var(--forest-sage)",
-      deltaBg: "rgba(45,90,46,0.12)",
-      deltaBorder: "rgba(45,90,46,0.3)",
-      sub: [
-        { label: "Partner aktif", val: "24 partner" },
-        { label: "Pickup terlaksana", val: "138 kali" },
-        { label: "Rata-rata / partner", val: "281 kg/bln" },
-        { label: "Format SIPSN", val: "✓ Kompatibel", isGreen: true },
-      ],
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    async function checkLock() {
+      setCheckingLock(true);
+      try {
+        const existing = await fetchEsgReportPeriodLock(yearMonth);
+        if (!cancelled) setLockInfo(existing);
+      } catch (err) {
+        reportError("EsgSection.RingkasanTab.checkLock", err);
+      } finally {
+        if (!cancelled) setCheckingLock(false);
+      }
+    }
+    checkLock();
+    return () => {
+      cancelled = true;
+    };
+  }, [yearMonth]);
+
+  async function handleLock() {
+    if (!kpi) return;
+    setLocking(true);
+    setLockError(null);
+    try {
+      await lockEsgReportPeriod(yearMonth, periodStart, periodEnd, {
+        kpi,
+        materials,
+      });
+      const saved = await fetchEsgReportPeriodLock(yearMonth);
+      setLockInfo(saved);
+    } catch (err) {
+      reportError("EsgSection.RingkasanTab.handleLock", err);
+      setLockError(
+        err instanceof Error ? err.message : "Gagal mengunci period",
+      );
+    } finally {
+      setLocking(false);
+    }
+  }
+
+  function handlePreviewPdf() {
+    if (!kpi) return;
+
+    const doc = createReportDoc("Ringkasan Periode", `Periode: ${yearMonth}`);
+
+    let y = addSectionTitle(doc, 46, "Ringkasan 4 Indikator Utama");
+    y = addKpiGrid(doc, y + 4, [
+      {
+        label: "SDG 12.5.1(a) — Didaur Ulang",
+        value: `${(kpi.totalDryKg / 1000).toFixed(2)} ton`,
+      },
+      {
+        label: "SDG 12.3.1(a) — Food Waste",
+        value: materials.some((m) => m.isFoodWaste)
+          ? `${((materials.filter((m) => m.isFoodWaste).reduce((s, m) => s + m.dryKg, 0) / kpi.totalDryKg) * 100 || 0).toFixed(1)}%`
+          : "N/A",
+      },
+      {
+        label: "GHG — CO₂e Dihindari",
+        value: `${(kpi.totalCo2eKg / 1000).toFixed(2)} ton CO₂e`,
+      },
+      {
+        label: "SDG 12.4.2 — Total Volume",
+        value: `${(kpi.totalPickupKg / 1000).toFixed(2)} ton`,
+      },
+    ]);
+
+    y = addSectionTitle(doc, y + 4, "Rincian per Jenis Material");
+    y = addTable(
+      doc,
+      y + 2,
+      ["Material", "Dry (kg)", "Kontribusi (%)"],
+      materials.length > 0
+        ? materials.map((m) => [
+            m.materialName,
+            String(m.dryKg),
+            `${m.dryPct}%`,
+          ])
+        : [["—", "Belum ada data", "—"]],
+    );
+
+    addDisclaimer(
+      doc,
+      y,
+      "Dokumen ini bersifat data pendukung internal — angka CO₂e menggunakan metodologi IPCC 2006 dan perlu validasi ahli lingkungan.",
+    );
+
+    downloadReport(doc, `rebru-ringkasan-esg-${yearMonth}.pdf`);
+  }
+
+  const foodWasteMaterials = materials.filter((m) => m.isFoodWaste);
+  const foodWasteDryKg = foodWasteMaterials.reduce(
+    (sum, m) => sum + m.dryKg,
+    0,
+  );
+  const dryRatioPct =
+    kpi && kpi.totalPickupKg > 0
+      ? (kpi.totalDryKg / kpi.totalPickupKg) * 100
+      : 0;
+  const foodWastePct =
+    kpi && kpi.totalDryKg > 0 ? (foodWasteDryKg / kpi.totalDryKg) * 100 : 0;
+  const avgPerPartner =
+    kpi && kpi.pickupPartnerCount > 0
+      ? kpi.totalPickupKg / kpi.pickupPartnerCount
+      : 0;
+
+  const shownMaterials = materials.slice(0, 2);
+  const restMaterials = materials.slice(2);
+  const restMaterialsDryKg = restMaterials.reduce((sum, m) => sum + m.dryKg, 0);
+
+  const materialSubItems =
+    restMaterials.length > 0
+      ? [
+          ...shownMaterials.map((m) => ({
+            label: m.materialName,
+            val: `${(m.dryKg / 1000).toFixed(2)} ton`,
+          })),
+          {
+            label: `+${restMaterials.length} material lainnya`,
+            val: `${(restMaterialsDryKg / 1000).toFixed(2)} ton`,
+          },
+          {
+            label: "Rasio daur ulang",
+            val: `${dryRatioPct.toFixed(1)}% dari total`,
+          },
+        ]
+      : [
+          ...shownMaterials.map((m) => ({
+            label: m.materialName,
+            val: `${(m.dryKg / 1000).toFixed(2)} ton`,
+          })),
+          {
+            label: "Rasio daur ulang",
+            val: `${dryRatioPct.toFixed(1)}% dari total`,
+          },
+          { label: "Target KLHK 2025", val: "Reduksi 30%" },
+        ];
+
+  const METRICS = kpi
+    ? [
+        {
+          dot: "var(--forest-sage)",
+          code: "SDG 12.5.1(a) — Perpres 111/2022",
+          title: "Timbulan Sampah Didaur Ulang",
+          value: (kpi.totalDryKg / 1000).toFixed(2),
+          unit: "ton / bulan",
+          valueColor: "var(--forest-sage)",
+          badge: "Periode: bulan ini",
+          sub: materialSubItems,
+        },
+        {
+          dot: "var(--teal)",
+          code: "SDG 12.3.1(a) — SIPSN",
+          title: "Persentase Sisa Makanan (Food Waste)",
+          value:
+            foodWasteMaterials.length > 0 ? foodWastePct.toFixed(1) : "N/A",
+          unit: foodWasteMaterials.length > 0 ? "%" : "",
+          valueColor:
+            foodWasteMaterials.length > 0 ? "var(--teal)" : "var(--text-muted)",
+          badge: "Periode: bulan ini",
+          sub:
+            foodWasteMaterials.length > 0
+              ? [
+                  {
+                    label: "Volume food waste",
+                    val: `${(foodWasteDryKg / 1000).toFixed(2)} ton`,
+                  },
+                  { label: "Target SDG 2030", val: "Kurangi 50%" },
+                  { label: "Metodologi", val: "FAO food waste index" },
+                ]
+              : [
+                  {
+                    label: "Status",
+                    val: "Belum ada material food waste terdaftar",
+                  },
+                  { label: "Metodologi", val: "FAO food waste index" },
+                ],
+        },
+        {
+          dot: "var(--gold)",
+          code: "GHG Protocol — Emisi Dihindari",
+          title: "Setara CO₂ Tidak Terlepas ke Atmosfer",
+          value: (kpi.totalCo2eKg / 1000).toFixed(2),
+          unit: "ton CO₂e",
+          valueColor: "var(--gold)",
+          badge: "Periode: bulan ini",
+          sub: [
+            {
+              label: "Dari kompos",
+              val: kpi.komposFactorDefined
+                ? `${((kpi.totalCo2eKomposKg ?? 0) / 1000).toFixed(2)} ton CO₂e`
+                : "Belum dihitung",
+            },
+            {
+              label: "Dari biochar",
+              val: kpi.biocharFactorDefined
+                ? `${((kpi.totalCo2eBiocharKg ?? 0) / 1000).toFixed(2)} ton CO₂e`
+                : "Belum dihitung",
+            },
+            { label: "Metodologi", val: "IPCC 2006" },
+            { label: "⚠ Validasi", val: "Perlu ahli lingk.", isWarn: true },
+          ],
+        },
+        {
+          dot: "var(--coffee-latte)",
+          code: "SDG 12.4.2 — Total Volume Diproses",
+          title: "Semua Jenis Limbah Ditangani",
+          value: (kpi.totalPickupKg / 1000).toFixed(2),
+          unit: "ton / bulan",
+          valueColor: "var(--coffee-latte)",
+          badge: "Periode: bulan ini",
+          sub: [
+            {
+              label: "Partner terlacak",
+              val: `${kpi.pickupPartnerCount} partner`,
+            },
+            { label: "Pickup terlaksana", val: `${kpi.pickupCount} kali` },
+            {
+              label: "Rata-rata / partner",
+              val:
+                avgPerPartner > 0 ? `${avgPerPartner.toFixed(0)} kg/bln` : "—",
+            },
+            { label: "Format SIPSN", val: "✓ Kompatibel", isGreen: true },
+          ],
+        },
+      ]
+    : [];
+
+  if (loading) {
+    return (
+      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        Memuat data ringkasan...
+      </p>
+    );
+  }
+
+  if (error || !kpi) {
+    return (
+      <div
+        className="rounded-lg"
+        style={{
+          background: "var(--bg-card)",
+          border: "0.5px solid var(--border-subtle)",
+          padding: "16px",
+          color: "var(--text-muted)",
+        }}
+      >
+        Gagal memuat data ringkasan.{error ? ` (${error})` : ""}
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* Period control bar */}
-      <div className="flex items-center gap-2.5 mb-4">
+      <div className="flex items-center gap-2.5 mb-2 flex-wrap">
         <select
           className="rounded px-2.5 py-1.5 text-[11px] outline-none"
           style={{
@@ -238,17 +522,23 @@ function RingkasanTab() {
         >
           Sumber: WasteLog → BioBatch
         </span>
-        {!locked ? (
-          <span className="text-[10px]" style={{ color: "var(--gold)" }}>
-            🔒 Period belum dikunci
-          </span>
-        ) : (
-          <span className="text-[10px]" style={{ color: "var(--forest-sage)" }}>
-            ✓ Period dikunci
-          </span>
-        )}
+        {!checkingLock &&
+          (lockInfo ? (
+            <span
+              className="text-[10px]"
+              style={{ color: "var(--forest-sage)" }}
+            >
+              ✓ Period dikunci —{" "}
+              {new Date(lockInfo.lockedAt).toLocaleDateString("id-ID")}
+            </span>
+          ) : (
+            <span className="text-[10px]" style={{ color: "var(--gold)" }}>
+              🔒 Period belum dikunci
+            </span>
+          ))}
         <div className="ml-auto flex gap-2">
           <button
+            onClick={handlePreviewPdf}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px]"
             style={{
               background: "var(--bg-card)",
@@ -259,27 +549,35 @@ function RingkasanTab() {
             Preview PDF
           </button>
           <button
-            onClick={() => setLocked(true)}
+            onClick={handleLock}
+            disabled={locking || !!lockInfo || checkingLock}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] transition-all"
             style={{
-              background: locked ? "rgba(45,90,46,0.12)" : "var(--forest-sage)",
-              color: locked ? "var(--forest-sage)" : "white",
-              border: locked ? "0.5px solid rgba(45,90,46,0.35)" : "none",
-            }}
-            onMouseEnter={(e) => {
-              if (!locked) e.currentTarget.style.opacity = "0.85";
-            }}
-            onMouseLeave={(e) => {
-              if (!locked) e.currentTarget.style.opacity = "1";
+              background: lockInfo
+                ? "rgba(45,90,46,0.12)"
+                : "var(--forest-sage)",
+              color: lockInfo ? "var(--forest-sage)" : "white",
+              border: lockInfo ? "0.5px solid rgba(45,90,46,0.35)" : "none",
+              opacity: locking ? 0.6 : 1,
+              cursor: lockInfo ? "default" : "pointer",
             }}
           >
             <i className="fas fa-lock text-[9px]" />
-            {locked ? "Period Dikunci" : "Kunci Period"}
+            {lockInfo
+              ? "Period Dikunci"
+              : locking
+                ? "Mengunci..."
+                : "Kunci Period"}
           </button>
         </div>
       </div>
 
-      {/* 2×2 metric cards */}
+      {lockError && (
+        <p className="text-[10px] mb-2" style={{ color: "#f87171" }}>
+          Gagal mengunci: {lockError}
+        </p>
+      )}
+
       <div
         className="grid gap-2.5 mb-4"
         style={{ gridTemplateColumns: "repeat(2, 1fr)" }}
@@ -294,7 +592,6 @@ function RingkasanTab() {
               padding: "16px",
             }}
           >
-            {/* Code label */}
             <div className="flex items-center gap-1.5 mb-1">
               <div
                 className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -317,7 +614,6 @@ function RingkasanTab() {
               {m.title}
             </p>
 
-            {/* Value row */}
             <div className="flex items-baseline gap-2 mb-1">
               <span
                 className="font-semibold"
@@ -335,22 +631,20 @@ function RingkasanTab() {
               <span
                 className="ml-auto text-[10px] px-2 py-px rounded"
                 style={{
-                  background: m.deltaBg,
-                  color: m.deltaColor,
-                  border: `0.5px solid ${m.deltaBorder}`,
+                  background: "var(--bg-elevated)",
+                  color: "var(--text-muted)",
+                  border: "0.5px solid var(--border-subtle)",
                 }}
               >
-                {m.delta}
+                {m.badge}
               </span>
             </div>
 
-            {/* Divider */}
             <div
               className="mb-3"
               style={{ height: "0.5px", background: "var(--border-subtle)" }}
             />
 
-            {/* Sub metrics 2×2 */}
             <div className="grid grid-cols-2 gap-1.5">
               {m.sub.map((s) => (
                 <div key={s.label}>
@@ -383,7 +677,6 @@ function RingkasanTab() {
         ))}
       </div>
 
-      {/* 6-month trend chart */}
       <div
         className="rounded-lg"
         style={{
@@ -392,111 +685,21 @@ function RingkasanTab() {
           padding: "16px",
         }}
       >
-        <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
+        <p className="text-[11px] mb-2" style={{ color: "var(--text-muted)" }}>
           Tren 6 Bulan — Sampah Didaur Ulang (ton) · SDG 12.5.1(a)
         </p>
-        <svg
-          viewBox="0 0 500 90"
-          style={{ width: "100%", maxHeight: "90px" }}
-          aria-label="Tren 6 bulan recycling"
+        <div
+          className="rounded-md flex items-center justify-center"
+          style={{
+            height: "90px",
+            background: "var(--bg-elevated)",
+            border: "1px dashed var(--border-subtle)",
+          }}
         >
-          <defs>
-            <linearGradient id="esg-trend" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#4A8C5C" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#4A8C5C" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <line
-            x1="0"
-            y1="15"
-            x2="500"
-            y2="15"
-            stroke="rgba(255,255,255,0.04)"
-            strokeWidth="0.5"
-          />
-          <line
-            x1="0"
-            y1="45"
-            x2="500"
-            y2="45"
-            stroke="rgba(255,255,255,0.04)"
-            strokeWidth="0.5"
-          />
-          <line
-            x1="0"
-            y1="72"
-            x2="500"
-            y2="72"
-            stroke="rgba(255,255,255,0.04)"
-            strokeWidth="0.5"
-          />
-          <path
-            d="M50,65 L150,55 L250,48 L350,55 L450,18 L450,78 L350,78 L250,78 L150,78 L50,78 Z"
-            fill="url(#esg-trend)"
-          />
-          <polyline
-            points="50,65 150,55 250,48 350,55 450,18"
-            fill="none"
-            stroke="#4A8C5C"
-            strokeWidth="1.5"
-          />
-          <circle cx="50" cy="65" r="3" fill="#4A8C5C" />
-          <circle cx="150" cy="55" r="3" fill="#4A8C5C" />
-          <circle cx="250" cy="48" r="3" fill="#4A8C5C" />
-          <circle cx="350" cy="55" r="3" fill="#4A8C5C" />
-          <circle cx="450" cy="18" r="4" fill="#4A8C5C" />
-          <text
-            x="50"
-            y="88"
-            textAnchor="middle"
-            fill="#574E44"
-            fontSize="9"
-            fontFamily="DM Sans,sans-serif"
-          >
-            Des'25
-          </text>
-          <text
-            x="150"
-            y="88"
-            textAnchor="middle"
-            fill="#574E44"
-            fontSize="9"
-            fontFamily="DM Sans,sans-serif"
-          >
-            Jan
-          </text>
-          <text
-            x="250"
-            y="88"
-            textAnchor="middle"
-            fill="#574E44"
-            fontSize="9"
-            fontFamily="DM Sans,sans-serif"
-          >
-            Feb–Mar
-          </text>
-          <text
-            x="350"
-            y="88"
-            textAnchor="middle"
-            fill="#574E44"
-            fontSize="9"
-            fontFamily="DM Sans,sans-serif"
-          >
-            Apr
-          </text>
-          <text
-            x="450"
-            y="88"
-            textAnchor="middle"
-            fill="#4A8C5C"
-            fontSize="9"
-            fontFamily="DM Sans,sans-serif"
-            fontWeight="500"
-          >
-            Mei ↑
-          </text>
-        </svg>
+          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            📊 Tren historis multi-bulan — segera hadir (backlog)
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -506,88 +709,625 @@ function RingkasanTab() {
 // TAB 2 — Kontribusi Partner
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PARTNER_ESG = [
-  {
-    name: "Hotel Aryaduta",
-    type: "Hotel",
-    pickup: 8,
-    dry: 78,
-    stock: "18.4%",
-    biochar: "~21 kg",
-    kompos: "~16 kg",
-    co2e: "1.18 ton",
-    pickupTag: "✓ 8/8",
-    pickupGreen: true,
-  },
-  {
-    name: "Café Phoenam",
-    type: "Cafe",
-    pickup: 12,
-    dry: 65,
-    stock: "15.4%",
-    biochar: "~18 kg",
-    kompos: "~13 kg",
-    co2e: "0.98 ton",
-    pickupTag: "✓ 12/12",
-    pickupGreen: true,
-  },
-  {
-    name: "Anomali Coffee",
-    type: "Cafe",
-    pickup: 10,
-    dry: 54,
-    stock: "12.8%",
-    biochar: "~15 kg",
-    kompos: "~11 kg",
-    co2e: "0.82 ton",
-    pickupTag: "✓ 10/10",
-    pickupGreen: true,
-  },
-  {
-    name: "Hotel Sahid",
-    type: "Hotel",
-    pickup: 6,
-    dry: 48,
-    stock: "11.3%",
-    biochar: "~13 kg",
-    kompos: "~10 kg",
-    co2e: "0.73 ton",
-    pickupTag: "✓ 6/6",
-    pickupGreen: true,
-  },
-  {
-    name: "Makassar Ramen",
-    type: "Resto",
-    pickup: 6,
-    dry: 43,
-    stock: "10.2%",
-    biochar: "~12 kg",
-    kompos: "~9 kg",
-    co2e: "0.65 ton",
-    pickupTag: "5/6",
-    pickupGreen: false,
-  },
-];
+function typeLabel(jenisUsaha: string): string {
+  if (jenisUsaha.startsWith("Hotel")) return "Hotel";
+  if (jenisUsaha.startsWith("Cafe")) return "Cafe";
+  if (jenisUsaha === "Restoran") return "Resto";
+  if (jenisUsaha.startsWith("Catering")) return "Catering";
+  if (jenisUsaha.startsWith("Kantor")) return "Kantor";
+  return jenisUsaha;
+}
 
-const BAR_DATA = [
-  { name: "Hotel Aryaduta", dry: 78, pct: 100 },
-  { name: "Café Phoenam", dry: 65, pct: 83 },
-  { name: "Anomali Coffee", dry: 54, pct: 69 },
-  { name: "Hotel Sahid", dry: 48, pct: 62 },
-  { name: "Makassar Ramen", dry: 43, pct: 55 },
-  { name: "Dalton Coffee", dry: 36, pct: 46 },
-  { name: "Kopi Senja", dry: 29, pct: 37, dim: true },
-  { name: "Excelso Pnk", dry: 24, pct: 31, dim: true },
-];
+type PartnerRow = EsgPartnerBreakdownBasic & {
+  biocharKg?: number;
+  komposKg?: number;
+  co2eKg?: number;
+};
+
+function downloadPartnerCsv(rows: PartnerRow[]) {
+  const header = [
+    "Partner",
+    "Kategori",
+    "Dry (kg)",
+    "Stock (%)",
+    "Biochar (kg)",
+    "Kompos (kg)",
+    "CO2e (kg)",
+    "Pickup Selesai",
+    "Pickup Total",
+  ];
+  const lines = rows.map((r) => [
+    r.organization,
+    typeLabel(r.jenisUsaha),
+    r.dryKg,
+    r.dryPct,
+    r.biocharKg ?? "",
+    r.komposKg ?? "",
+    r.co2eKg ?? "",
+    r.pickupDone,
+    r.pickupTotal,
+  ]);
+
+  const csvContent = [header, ...lines]
+    .map((row) =>
+      row
+        .map((cell) => {
+          const str = String(cell);
+          return str.includes(",") || str.includes('"')
+            ? `"${str.replace(/"/g, '""')}"`
+            : str;
+        })
+        .join(","),
+    )
+    .join("\n");
+
+  const blob = new Blob(["\uFEFF" + csvContent], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  link.href = url;
+  link.download = `esg-kontribusi-partner-${yearMonth}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// ── Fungsi bersama: dipakai tombol PDF di dalam modal DAN ikon PDF di baris tabel ──
+// Supaya logika "susun isi PDF laporan partner" cuma ditulis SATU KALI.
+async function exportPartnerPdf(
+  partnerId: string,
+  yearMonth: string,
+  onError: (msg: string) => void,
+) {
+  try {
+    const { start, end } = getMonthRangeISO(yearMonth);
+    const [detail, stops] = await Promise.all([
+      fetchEsgPartnerDetail(partnerId),
+      fetchEsgPartnerPickupStops(partnerId, start, end),
+    ]);
+
+    if (!detail) {
+      onError("Data partner tidak ditemukan.");
+      return;
+    }
+
+    const doc = createReportDoc(
+      `Laporan Partner — ${detail.organization}`,
+      `Periode: ${yearMonth} · Kategori: ${detail.jenisUsaha}`,
+    );
+
+    let y = addSectionTitle(doc, 46, "Informasi Partner");
+    y = addKpiGrid(doc, y + 4, [
+      { label: "PIC", value: detail.picName },
+      { label: "Telepon", value: detail.phone },
+      { label: "Volume Limbah", value: detail.volumeLimbah },
+      { label: "Alamat", value: detail.alamatDetail },
+    ]);
+
+    y = addSectionTitle(doc, y + 4, `Riwayat Pickup (${stops.length})`);
+    y = addTable(
+      doc,
+      y + 2,
+      ["Tanggal", "Berat (kg)", "Status", "Kondisi"],
+      stops.length > 0
+        ? stops.map((s) => [
+            new Date(s.routeDate).toLocaleDateString("id-ID"),
+            s.actualKg !== null ? String(s.actualKg) : "—",
+            s.status,
+            s.condition ?? "—",
+          ])
+        : [["—", "Belum ada pickup periode ini", "—", "—"]],
+    );
+
+    addDisclaimer(
+      doc,
+      y,
+      "Dokumen ini bersifat data pendukung untuk customer — pelaporan resmi ke DLH dilakukan oleh customer masing-masing.",
+    );
+
+    const safeSlug = detail.organization.toLowerCase().replace(/\s+/g, "-");
+    downloadReport(doc, `rebru-laporan-${safeSlug}-${yearMonth}.pdf`);
+  } catch (err) {
+    reportError("EsgSection.exportPartnerPdf", err);
+    onError(err instanceof Error ? err.message : "Gagal membuat PDF.");
+  }
+}
+
+function generateEsgReportPdf(
+  format: ReportFormat,
+  kpi: EsgKpiSummary,
+  materials: EsgMaterialBreakdown[],
+  partners: EsgPartnerBreakdownBasic[],
+  yearMonth: string,
+) {
+  const formatLabel =
+    format === "sipsn"
+      ? "Format SIPSN"
+      : format === "sdg"
+        ? "Format Indikator SDG"
+        : format === "ghg"
+          ? "Format GHG Protocol"
+          : "Laporan Komprehensif";
+
+  const doc = createReportDoc(
+    formatLabel,
+    `Periode: ${yearMonth} · Seluruh Partner (${partners.length})`,
+  );
+
+  let y = 46;
+
+  if (format === "sipsn" || format === "komprehensif") {
+    y = addSectionTitle(doc, y, "Data Pengurangan & Penanganan Sampah");
+    y = addKpiGrid(doc, y + 4, [
+      {
+        label: "Total Timbulan Ditangani",
+        value: `${(kpi.totalPickupKg / 1000).toFixed(2)} ton`,
+      },
+      {
+        label: "Total Didaur Ulang (Kering)",
+        value: `${(kpi.totalDryKg / 1000).toFixed(2)} ton`,
+      },
+      { label: "Jumlah Pickup", value: `${kpi.pickupCount} kali` },
+      { label: "Partner Terlibat", value: `${kpi.pickupPartnerCount} partner` },
+    ]);
+    y += 4;
+  }
+
+  if (format === "sdg" || format === "komprehensif") {
+    const foodWasteMaterials = materials.filter((m) => m.isFoodWaste);
+    const foodWasteDryKg = foodWasteMaterials.reduce(
+      (sum, m) => sum + m.dryKg,
+      0,
+    );
+    const foodWastePct =
+      kpi.totalDryKg > 0 ? (foodWasteDryKg / kpi.totalDryKg) * 100 : 0;
+
+    y = addSectionTitle(doc, y, "Indikator Resmi — Perpres 111/2022");
+    y = addTable(
+      doc,
+      y + 2,
+      ["Kode", "Deskripsi", "Nilai"],
+      [
+        [
+          "12.5.1(a)",
+          "Timbulan sampah didaur ulang",
+          `${(kpi.totalDryKg / 1000).toFixed(2)} ton`,
+        ],
+        [
+          "12.3.1(a)",
+          "Persentase sisa makanan (food waste)",
+          foodWasteMaterials.length > 0 ? `${foodWastePct.toFixed(1)}%` : "N/A",
+        ],
+        [
+          "12.4.2",
+          "Total volume limbah ditangani",
+          `${(kpi.totalPickupKg / 1000).toFixed(2)} ton`,
+        ],
+        ["12.6.1(a)", "Penerapan SNI ISO 14001", "N/A"],
+      ],
+    );
+    y += 4;
+  }
+
+  if (format === "ghg" || format === "komprehensif") {
+    y = addSectionTitle(doc, y, "Emisi CO₂e Dihindari — Metodologi IPCC 2006");
+    y = addKpiGrid(doc, y + 4, [
+      {
+        label: "Dari Kompos",
+        value: kpi.komposFactorDefined
+          ? `${((kpi.totalCo2eKomposKg ?? 0) / 1000).toFixed(2)} ton CO₂e`
+          : "Belum dihitung",
+      },
+      {
+        label: "Dari Biochar",
+        value: kpi.biocharFactorDefined
+          ? `${((kpi.totalCo2eBiocharKg ?? 0) / 1000).toFixed(2)} ton CO₂e`
+          : "Belum dihitung",
+      },
+      {
+        label: "Total CO₂e Dihindari",
+        value: `${(kpi.totalCo2eKg / 1000).toFixed(2)} ton CO₂e`,
+      },
+      {
+        label: "Status Validasi",
+        value: "Estimasi internal — perlu ahli lingkungan",
+      },
+    ]);
+    y += 4;
+  }
+
+  if (format === "komprehensif" && partners.length > 0) {
+    y = addSectionTitle(doc, y, `Kontribusi Partner (${partners.length})`);
+    y = addTable(
+      doc,
+      y + 2,
+      ["Partner", "Kategori", "Dry (kg)", "Kontribusi (%)", "Pickup"],
+      partners.map((p) => [
+        p.organization,
+        p.jenisUsaha,
+        String(p.dryKg),
+        `${p.dryPct}%`,
+        `${p.pickupDone}/${p.pickupTotal}`,
+      ]),
+    );
+  }
+
+  addDisclaimer(
+    doc,
+    y,
+    "Dokumen ini bersifat data pendukung untuk customer — pelaporan resmi ke DLH dilakukan oleh customer masing-masing. Metodologi CO₂e (IPCC 2006) merupakan estimasi internal yang belum divalidasi ahli lingkungan.",
+  );
+
+  downloadReport(doc, `rebru-laporan-${format}-${yearMonth}.pdf`);
+}
+
+function PartnerDetailModal({
+  partnerId,
+  yearMonth,
+  onClose,
+}: {
+  partnerId: string;
+  yearMonth: string;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<EsgPartnerDetail | null>(null);
+  const [stops, setStops] = useState<EsgPartnerPickupStop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { start, end } = getMonthRangeISO(yearMonth);
+        const [detailData, stopsData] = await Promise.all([
+          fetchEsgPartnerDetail(partnerId),
+          fetchEsgPartnerPickupStops(partnerId, start, end),
+        ]);
+        if (!cancelled) {
+          setDetail(detailData);
+          setStops(stopsData);
+        }
+      } catch (err) {
+        reportError("EsgSection.PartnerDetailModal.load", err);
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Gagal memuat data");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [partnerId, yearMonth]);
+
+  async function handleExportPdf() {
+    setExporting(true);
+    setExportError(null);
+    await exportPartnerPdf(partnerId, yearMonth, setExportError);
+    setExporting(false);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="rounded-lg w-full max-w-[440px] max-h-[80vh] overflow-y-auto"
+        style={{
+          background: "var(--bg-surface)",
+          border: "0.5px solid var(--border-default)",
+          padding: "20px",
+        }}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3
+              className="text-sm font-semibold"
+              style={{ color: "var(--text-primary)" }}
+            >
+              {detail?.organization ?? "Detail Partner"}
+            </h3>
+            <p
+              className="text-[10px] mt-0.5"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Periode: {yearMonth}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-sm"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <i className="fas fa-times" />
+          </button>
+        </div>
+
+        {loading && (
+          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Memuat...
+          </p>
+        )}
+
+        {error && (
+          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Gagal memuat data. ({error})
+          </p>
+        )}
+
+        {!loading && !error && detail && (
+          <>
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
+              <div>
+                <p
+                  className="text-[9px] uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Kategori
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                  {detail.jenisUsaha}
+                </p>
+              </div>
+              <div>
+                <p
+                  className="text-[9px] uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Volume Limbah
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                  {detail.volumeLimbah}
+                </p>
+              </div>
+              <div>
+                <p
+                  className="text-[9px] uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  PIC
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                  {detail.picName}
+                </p>
+              </div>
+              <div>
+                <p
+                  className="text-[9px] uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Telepon
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                  {detail.phone}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p
+                  className="text-[9px] uppercase tracking-wider"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Alamat
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-primary)" }}>
+                  {detail.alamatDetail}
+                </p>
+              </div>
+            </div>
+
+            <p
+              className="text-[10px] uppercase tracking-wider mb-2"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Riwayat Pickup Periode Ini ({stops.length})
+            </p>
+            <div className="flex flex-col gap-1.5 mb-4">
+              {stops.length === 0 && (
+                <p
+                  className="text-[11px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Belum ada pickup periode ini.
+                </p>
+              )}
+              {stops.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between px-2.5 py-2 rounded"
+                  style={{
+                    background: "var(--bg-card)",
+                    border: "0.5px solid var(--border-subtle)",
+                  }}
+                >
+                  <span
+                    className="text-[11px]"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {new Date(s.routeDate).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                  <span
+                    className="text-[11px]"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {s.actualKg !== null ? `${s.actualKg} kg` : "—"}
+                  </span>
+                  <span
+                    className="text-[9px] px-1.5 py-px rounded"
+                    style={{
+                      background:
+                        s.status === "done"
+                          ? "rgba(45,90,46,0.12)"
+                          : "rgba(196,136,47,0.12)",
+                      color:
+                        s.status === "done"
+                          ? "var(--forest-sage)"
+                          : "var(--coffee-latte)",
+                    }}
+                  >
+                    {s.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {exportError && (
+              <p className="text-[10px] mb-2" style={{ color: "#f87171" }}>
+                Gagal export: {exportError}
+              </p>
+            )}
+
+            <button
+              onClick={handleExportPdf}
+              disabled={exporting}
+              className="w-full py-2.5 rounded-md text-xs font-medium flex items-center justify-center gap-2"
+              style={{
+                background: "var(--forest-sage)",
+                color: "white",
+                border: "none",
+                opacity: exporting ? 0.6 : 1,
+              }}
+            >
+              <i
+                className={`fas ${exporting ? "fa-circle-notch fa-spin" : "fa-file-pdf"}`}
+              />
+              {exporting ? "Membuat PDF..." : "Export PDF Laporan Partner"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function PartnerTab() {
-  const COL = "1.3fr 65px 65px 60px 70px 70px 80px 90px";
+  const COL = "1.3fr 65px 65px 60px 70px 70px 80px 100px";
+  const { show } = useDashToast();
+
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const [rows, setRows] = useState<PartnerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [komposFactorMissing, setKomposFactorMissing] = useState(false);
+  const [detailPartnerId, setDetailPartnerId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { start, end } = getMonthRangeISO(yearMonth);
+
+        const [basic, production] = await Promise.all([
+          fetchEsgPartnerBreakdownBasic(start, end),
+          fetchEsgPartnerProductionBreakdown(start, end),
+        ]);
+
+        const productionMap = new Map(production.map((p) => [p.partnerId, p]));
+        const merged: PartnerRow[] = basic.map((r) => {
+          const p = productionMap.get(r.partnerId);
+          return p
+            ? {
+                ...r,
+                biocharKg: p.biocharKg,
+                komposKg: p.komposKg,
+                co2eKg: p.co2eKg,
+              }
+            : r;
+        });
+
+        if (!cancelled) {
+          setRows(merged);
+          setKomposFactorMissing(
+            production.some((p) => !p.komposFactorDefined),
+          );
+        }
+      } catch (err) {
+        reportError("EsgSection.PartnerTab.load", err);
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Gagal memuat data");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleRowExport(partnerId: string) {
+    setExportingId(partnerId);
+    await exportPartnerPdf(partnerId, yearMonth, (msg) =>
+      show(`Gagal export PDF: ${msg}`, "error"),
+    );
+    setExportingId(null);
+  }
+
+  const filteredRows = rows.filter((r) =>
+    typeFilter === "all" ? true : typeLabel(r.jenisUsaha) === typeFilter,
+  );
+  const topBars = filteredRows.slice(0, 6);
+  const restRows = filteredRows.slice(6);
+  const restDry = restRows.reduce((sum, r) => sum + r.dryKg, 0);
+  const maxDry = filteredRows[0]?.dryKg ?? 0;
+  const totalDry = filteredRows.reduce((sum, r) => sum + r.dryKg, 0);
+  const totalCo2eKg = filteredRows.reduce((sum, r) => sum + (r.co2eKg ?? 0), 0);
+
+  if (loading) {
+    return (
+      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        Memuat data partner...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        className="rounded-lg"
+        style={{
+          background: "var(--bg-card)",
+          border: "0.5px solid var(--border-subtle)",
+          padding: "16px",
+          color: "var(--text-muted)",
+        }}
+      >
+        Gagal memuat data partner. ({error})
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* Control bar */}
-      <div className="flex items-center gap-2.5 mb-4">
+      <div className="flex items-center gap-2.5 mb-4 flex-wrap">
         <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
           className="rounded px-2.5 py-1.5 text-[11px] outline-none"
           style={{
             background: "var(--bg-elevated)",
@@ -595,21 +1335,10 @@ function PartnerTab() {
             color: "var(--text-primary)",
           }}
         >
-          <option>Mei 2026</option>
-          <option>April 2026</option>
-        </select>
-        <select
-          className="rounded px-2.5 py-1.5 text-[11px] outline-none"
-          style={{
-            background: "var(--bg-elevated)",
-            border: "0.5px solid var(--border-subtle)",
-            color: "var(--text-primary)",
-          }}
-        >
-          <option>Semua Partner</option>
-          <option>Hotel</option>
-          <option>Cafe</option>
-          <option>Restoran</option>
+          <option value="all">Semua Partner</option>
+          <option value="Hotel">Hotel</option>
+          <option value="Cafe">Cafe</option>
+          <option value="Resto">Restoran</option>
         </select>
         <span
           className="text-[10px] px-2.5 py-1 rounded"
@@ -621,22 +1350,26 @@ function PartnerTab() {
         >
           ⚡ Atribusi CO₂e = proporsional dry weight ke stock
         </span>
-        <div className="ml-auto">
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px]"
-            style={{
-              background: "var(--bg-card)",
-              border: "0.5px solid var(--border-subtle)",
-              color: "var(--text-secondary)",
-            }}
-          >
-            <i className="fas fa-file-csv text-[9px]" /> Export Semua CSV
-          </button>
-        </div>
+        {komposFactorMissing && (
+          <span className="text-[10px]" style={{ color: "var(--gold)" }}>
+            ⚠ CO₂e kompos belum terhitung — faktor belum ditetapkan
+          </span>
+        )}
+        <button
+          onClick={() => downloadPartnerCsv(filteredRows)}
+          className="ml-auto text-[11px] px-3 py-1.5 rounded"
+          style={{
+            background: "var(--bg-card)",
+            border: "0.5px solid var(--border-subtle)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <i className="fas fa-file-csv text-[10px] mr-1.5" />
+          Export Semua CSV
+        </button>
       </div>
 
       <div className="flex gap-3">
-        {/* Ranked bar chart */}
         <div
           className="rounded-lg flex-shrink-0"
           style={{
@@ -657,28 +1390,18 @@ function PartnerTab() {
             Top Kontributor — Dry Weight (kg)
           </p>
           <div className="flex flex-col gap-2.5">
-            {BAR_DATA.map((b) => (
-              <div key={b.name}>
+            {topBars.map((b) => (
+              <div key={b.partnerId}>
                 <div className="flex justify-between text-[11px] mb-1">
                   <span
-                    style={{
-                      color: b.dim
-                        ? "var(--text-secondary)"
-                        : "var(--text-primary)",
-                      fontWeight: b.dim ? 400 : 500,
-                    }}
+                    style={{ color: "var(--text-primary)", fontWeight: 500 }}
                   >
-                    {b.name}
+                    {b.organization}
                   </span>
                   <span
-                    style={{
-                      color: b.dim
-                        ? "var(--text-secondary)"
-                        : "var(--coffee-latte)",
-                      fontWeight: b.dim ? 400 : 600,
-                    }}
+                    style={{ color: "var(--coffee-latte)", fontWeight: 600 }}
                   >
-                    {b.dry} kg
+                    {b.dryKg} kg
                   </span>
                 </div>
                 <div
@@ -688,53 +1411,57 @@ function PartnerTab() {
                   <div
                     className="rounded-full h-full"
                     style={{
-                      width: `${b.pct}%`,
-                      background: b.dim
-                        ? "var(--text-muted)"
-                        : "var(--coffee-latte)",
-                      opacity: b.dim ? 0.4 : 0.75,
+                      width: `${maxDry > 0 ? (b.dryKg / maxDry) * 100 : 0}%`,
+                      background: "var(--coffee-latte)",
+                      opacity: 0.75,
                     }}
                   />
                 </div>
               </div>
             ))}
-            {/* +16 others */}
-            <div
-              style={{
-                paddingTop: "6px",
-                borderTop: "0.5px solid var(--border-subtle)",
-              }}
-            >
-              <div className="flex justify-between text-[11px] mb-1">
-                <span style={{ color: "var(--text-muted)" }}>
-                  +16 partner lainnya
-                </span>
-                <span style={{ color: "var(--text-muted)" }}>~146 kg</span>
-              </div>
+            {restRows.length > 0 && (
               <div
-                className="rounded-full"
-                style={{ height: "6px", background: "var(--bg-elevated)" }}
+                style={{
+                  paddingTop: "6px",
+                  borderTop: "0.5px solid var(--border-subtle)",
+                }}
               >
+                <div className="flex justify-between text-[11px] mb-1">
+                  <span style={{ color: "var(--text-muted)" }}>
+                    +{restRows.length} partner lainnya
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    ~{restDry.toFixed(0)} kg
+                  </span>
+                </div>
                 <div
-                  className="rounded-full h-full"
-                  style={{
-                    width: "34%",
-                    background: "var(--text-muted)",
-                    opacity: 0.25,
-                  }}
-                />
+                  className="rounded-full"
+                  style={{ height: "6px", background: "var(--bg-elevated)" }}
+                >
+                  <div
+                    className="rounded-full h-full"
+                    style={{
+                      width: `${maxDry > 0 ? (restDry / maxDry) * 100 : 0}%`,
+                      background: "var(--text-muted)",
+                      opacity: 0.25,
+                    }}
+                  />
+                </div>
               </div>
-            </div>
+            )}
+            {filteredRows.length === 0 && (
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                Belum ada data periode ini.
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Detail table */}
         <div className="flex-1 min-w-0">
           <div
             className="rounded-lg overflow-hidden"
             style={{ border: "0.5px solid var(--border-subtle)" }}
           >
-            {/* Header */}
             <div
               className="grid px-3 py-2.5"
               style={{
@@ -767,11 +1494,10 @@ function PartnerTab() {
               ))}
             </div>
 
-            {/* Rows */}
-            {PARTNER_ESG.map((r) => (
+            {filteredRows.map((r) => (
               <div
-                key={r.name}
-                className="grid px-3 py-2.5 items-center cursor-pointer transition-all"
+                key={r.partnerId}
+                className="grid px-3 py-2.5 items-center transition-all"
                 style={{
                   gridTemplateColumns: COL,
                   borderBottom: "0.5px solid var(--border-subtle)",
@@ -789,77 +1515,102 @@ function PartnerTab() {
                     className="text-xs font-medium"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    {r.name}
+                    {r.organization}
                   </p>
                   <p
                     className="text-[10px]"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    {r.type} · {r.pickup} pickup
+                    {typeLabel(r.jenisUsaha)} · {r.pickupDone} pickup
                   </p>
                 </div>
                 <div
                   className="text-right text-xs font-medium"
                   style={{ color: "var(--coffee-latte)" }}
                 >
-                  {r.dry} kg
+                  {r.dryKg} kg
                 </div>
                 <div
                   className="text-right text-xs"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  {r.stock}
+                  {r.dryPct}%
                 </div>
                 <div
                   className="text-right text-xs"
                   style={{ color: "var(--forest-sage)" }}
                 >
-                  {r.biochar}
+                  {r.biocharKg !== undefined ? `~${r.biocharKg} kg` : "—"}
                 </div>
                 <div
                   className="text-right text-xs"
                   style={{ color: "var(--teal)" }}
                 >
-                  {r.kompos}
+                  {r.komposKg !== undefined ? `~${r.komposKg} kg` : "—"}
                 </div>
                 <div
                   className="text-right text-xs"
                   style={{ color: "var(--gold)" }}
                 >
-                  {r.co2e}
+                  {r.co2eKg !== undefined
+                    ? `${(r.co2eKg / 1000).toFixed(2)} ton`
+                    : "—"}
                 </div>
                 <div className="text-right">
                   <span
                     className="text-[9px] px-1.5 py-px rounded"
                     style={{
-                      background: r.pickupGreen
-                        ? "rgba(45,90,46,0.12)"
-                        : "rgba(196,136,47,0.12)",
-                      color: r.pickupGreen
-                        ? "var(--forest-sage)"
-                        : "var(--coffee-latte)",
-                      border: `0.5px solid ${r.pickupGreen ? "rgba(45,90,46,0.3)" : "rgba(196,136,47,0.4)"}`,
+                      background:
+                        r.pickupTotal > 0 && r.pickupDone === r.pickupTotal
+                          ? "rgba(45,90,46,0.12)"
+                          : "rgba(196,136,47,0.12)",
+                      color:
+                        r.pickupTotal > 0 && r.pickupDone === r.pickupTotal
+                          ? "var(--forest-sage)"
+                          : "var(--coffee-latte)",
+                      border: `0.5px solid ${
+                        r.pickupTotal > 0 && r.pickupDone === r.pickupTotal
+                          ? "rgba(45,90,46,0.3)"
+                          : "rgba(196,136,47,0.4)"
+                      }`,
                     }}
                   >
-                    {r.pickupTag}
+                    {r.pickupDone}/{r.pickupTotal}
                   </span>
                 </div>
-                <div className="text-right">
+                <div className="text-right flex justify-end gap-1.5">
                   <button
-                    className="px-2 py-1 rounded text-[10px]"
+                    onClick={() => setDetailPartnerId(r.partnerId)}
+                    title="Lihat detail"
+                    className="w-6 h-6 rounded flex items-center justify-center"
                     style={{
                       background: "var(--bg-elevated)",
                       border: "0.5px solid var(--border-subtle)",
                       color: "var(--text-secondary)",
                     }}
                   >
-                    <i className="fas fa-file-pdf text-[9px] mr-1" /> Export
+                    <i className="fas fa-eye text-[10px]" />
+                  </button>
+                  <button
+                    onClick={() => handleRowExport(r.partnerId)}
+                    disabled={exportingId === r.partnerId}
+                    title="Export PDF"
+                    className="w-6 h-6 rounded flex items-center justify-center"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      border: "0.5px solid var(--border-subtle)",
+                      color: "var(--text-secondary)",
+                      opacity: exportingId === r.partnerId ? 0.5 : 1,
+                    }}
+                  >
+                    <i
+                      className={`fas ${exportingId === r.partnerId ? "fa-circle-notch fa-spin" : "fa-file-pdf"} text-[10px]`}
+                    />
                   </button>
                 </div>
               </div>
             ))}
 
-            {/* Footer */}
             <div
               className="flex items-center justify-between px-3 py-2.5"
               style={{ background: "var(--bg-elevated)" }}
@@ -868,22 +1619,21 @@ function PartnerTab() {
                 className="text-[11px]"
                 style={{ color: "var(--text-muted)" }}
               >
-                5 dari 24 partner · Total dry 423 kg · Total CO₂e 6.43 ton
+                {filteredRows.length} partner · Total dry {totalDry.toFixed(0)}{" "}
+                kg · Total CO₂e {(totalCo2eKg / 1000).toFixed(2)} ton
               </span>
-              <button
-                className="text-[11px] px-3 py-1.5 rounded"
-                style={{
-                  background: "var(--bg-card)",
-                  border: "0.5px solid var(--border-subtle)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                Lihat semua →
-              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {detailPartnerId && (
+        <PartnerDetailModal
+          partnerId={detailPartnerId}
+          yearMonth={yearMonth}
+          onClose={() => setDetailPartnerId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -892,45 +1642,100 @@ function PartnerTab() {
 // TAB 3 — Indikator Resmi
 // ─────────────────────────────────────────────────────────────────────────────
 
-function IndikatorTab() {
-  const INDICATORS = [
-    {
-      code: "12.5.1(a)",
-      codeColor: "var(--forest-sage)",
-      desc: "Jumlah timbulan sampah yang didaur ulang",
-      value: "4.82 ton",
-      barWidth: 80,
-      barColor: "var(--forest-sage)",
-      note: "Target 30% pengurangan — sumber: WasteLog per partner",
-    },
-    {
-      code: "12.3.1(a)",
-      codeColor: "var(--teal)",
-      desc: "Persentase sisa makanan (food waste index)",
-      value: "38.2%",
-      barWidth: 55,
-      barColor: "var(--teal)",
-      note: "Target pengurangan 50% (SDG 2030) — metodologi FAO",
-    },
-    {
-      code: "12.4.2",
-      codeColor: "var(--coffee-latte)",
-      desc: "Limbah yang dihasilkan & ditangani",
-      value: "6.75 ton",
-      barWidth: 70,
-      barColor: "var(--coffee-latte)",
-      note: "Total volume dikelola Rebru periode ini",
-    },
-    {
-      code: "12.6.1(a)",
-      codeColor: "var(--text-muted)",
-      desc: "Penerapan SNI ISO 14001",
-      value: "N/A",
-      barWidth: 0,
-      barColor: "transparent",
-      note: "Tidak berlaku untuk tahap operasional saat ini",
-    },
-  ];
+function IndikatorTab({
+  kpi,
+  materials,
+  loading,
+  error,
+}: {
+  kpi: EsgKpiSummary | null;
+  materials: EsgMaterialBreakdown[];
+  loading: boolean;
+  error: string | null;
+}) {
+  const foodWasteMaterials = materials.filter((m) => m.isFoodWaste);
+  const foodWasteDryKg = foodWasteMaterials.reduce(
+    (sum, m) => sum + m.dryKg,
+    0,
+  );
+  const foodWastePct =
+    kpi && kpi.totalDryKg > 0 ? (foodWasteDryKg / kpi.totalDryKg) * 100 : 0;
+  const dryRatioPct =
+    kpi && kpi.totalPickupKg > 0
+      ? (kpi.totalDryKg / kpi.totalPickupKg) * 100
+      : 0;
+
+  const INDICATORS = kpi
+    ? [
+        {
+          code: "12.5.1(a)",
+          codeColor: "var(--forest-sage)",
+          desc: "Jumlah timbulan sampah yang didaur ulang",
+          value: `${(kpi.totalDryKg / 1000).toFixed(2)} ton`,
+          barWidth: Math.min(dryRatioPct, 100),
+          barColor: "var(--forest-sage)",
+          note: "Target 30% pengurangan — sumber: WasteLog per partner",
+        },
+        {
+          code: "12.3.1(a)",
+          codeColor: "var(--teal)",
+          desc: "Persentase sisa makanan (food waste index)",
+          value:
+            foodWasteMaterials.length > 0
+              ? `${foodWastePct.toFixed(1)}%`
+              : "N/A",
+          barWidth:
+            foodWasteMaterials.length > 0 ? Math.min(foodWastePct, 100) : 0,
+          barColor: "var(--teal)",
+          note:
+            foodWasteMaterials.length > 0
+              ? "Target pengurangan 50% (SDG 2030) — metodologi FAO"
+              : "Tidak berlaku — belum ada material food waste terdaftar",
+        },
+        {
+          code: "12.4.2",
+          codeColor: "var(--coffee-latte)",
+          desc: "Limbah yang dihasilkan & ditangani",
+          value: `${(kpi.totalPickupKg / 1000).toFixed(2)} ton`,
+          barWidth: 0,
+          barColor: "transparent",
+          note: `Total volume dikelola Rebru periode ini — ${kpi.pickupPartnerCount} partner, ${kpi.pickupCount} pickup`,
+        },
+        {
+          code: "12.6.1(a)",
+          codeColor: "var(--text-muted)",
+          desc: "Penerapan SNI ISO 14001",
+          value: "N/A",
+          barWidth: 0,
+          barColor: "transparent",
+          note: "Tidak berlaku untuk tahap operasional saat ini",
+        },
+      ]
+    : [];
+
+  if (loading) {
+    return (
+      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        Memuat data indikator...
+      </p>
+    );
+  }
+
+  if (error || !kpi) {
+    return (
+      <div
+        className="rounded-lg"
+        style={{
+          background: "var(--bg-card)",
+          border: "0.5px solid var(--border-subtle)",
+          padding: "16px",
+          color: "var(--text-muted)",
+        }}
+      >
+        Gagal memuat data indikator.{error ? ` (${error})` : ""}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -944,7 +1749,7 @@ function IndikatorTab() {
       >
         <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>
           Pemetaan Indikator Resmi — Perpres 111/2022 · Rebru Kota Makassar ·
-          Mei 2026
+          Bulan ini
         </p>
 
         <div className="flex flex-col gap-4">
@@ -986,7 +1791,6 @@ function IndikatorTab() {
           ))}
         </div>
 
-        {/* Warning box */}
         <div
           className="mt-4 rounded-md px-3 py-2.5 text-[11px]"
           style={{
@@ -1007,7 +1811,7 @@ function IndikatorTab() {
 // TAB 4 — Governance
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GovernanceTab() {
+function GovernanceTab({ kpi }: { kpi: EsgKpiSummary | null }) {
   const COC_CHAIN = [
     { label: "Partner (HoReCa)", amber: false },
     { label: "Pickup (Collector)", amber: false },
@@ -1017,25 +1821,51 @@ function GovernanceTab() {
     { label: "Buyer / Laporan", amber: false },
   ];
 
-  const COMPLIANCE = [
-    { label: "UU No. 18/2008 Pengelolaan Sampah", done: true, tag: "" },
-    {
-      label: "PP No. 81/2012 Sampah Sejenis Rumah Tangga",
-      done: true,
-      tag: "",
-    },
-    { label: "Perda Kota Makassar No. 4/2011", done: true, tag: "" },
-    {
-      label: "Izin Pengelola Limbah Organik (DLH Makassar)",
-      done: false,
-      tag: "Proses pengajuan",
-    },
-    {
-      label: "Konfirmasi format SIPSN dengan DLH",
-      done: false,
-      tag: "Perlu konfirmasi",
-    },
-  ];
+  const [items, setItems] = useState<EsgComplianceItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchEsgComplianceChecklist();
+        if (!cancelled) setItems(data);
+      } catch (err) {
+        reportError("EsgSection.GovernanceTab.load", err);
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Gagal memuat data");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggleDone(item: EsgComplianceItem) {
+    setSavingId(item.id);
+    const nextDone = !item.done;
+    setItems((prev) =>
+      prev.map((p) => (p.id === item.id ? { ...p, done: nextDone } : p)),
+    );
+    try {
+      await updateEsgComplianceDone(item.id, nextDone);
+    } catch (err) {
+      reportError("EsgSection.GovernanceTab.toggleDone", err);
+      setItems((prev) =>
+        prev.map((p) => (p.id === item.id ? { ...p, done: !nextDone } : p)),
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   return (
     <div>
@@ -1051,7 +1881,7 @@ function GovernanceTab() {
         <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
           Chain of Custody — Keterlacakan Penuh
         </p>
-        <div className="flex items-center gap-2 flex-wrap mb-5">
+        <div className="flex items-center gap-2 flex-wrap mb-2">
           {COC_CHAIN.map((c, i) => (
             <React.Fragment key={c.label}>
               <span
@@ -1074,43 +1904,70 @@ function GovernanceTab() {
             </React.Fragment>
           ))}
         </div>
+        <p className="text-[10px] mb-5" style={{ color: "var(--text-muted)" }}>
+          {kpi
+            ? `Aktivitas periode ini: ${kpi.pickupCount} pickup dari ${kpi.pickupPartnerCount} partner → ${(kpi.totalDryKg / 1000).toFixed(2)} ton dikeringkan → ${(kpi.totalCo2eKg / 1000).toFixed(2)} ton CO₂e dihindari.`
+            : "Memuat ringkasan aktivitas periode..."}
+        </p>
 
         {/* Compliance checklist */}
         <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
           Kepatuhan Regulasi
         </p>
-        <div className="flex flex-col gap-2.5">
-          {COMPLIANCE.map((c) => (
-            <div key={c.label} className="flex items-center gap-3">
-              <span
-                className="text-sm flex-shrink-0"
-                style={{
-                  color: c.done ? "var(--forest-sage)" : "var(--coffee-latte)",
-                }}
-              >
-                {c.done ? "✓" : "○"}
-              </span>
-              <span
-                className="text-xs flex-1"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {c.label}
-              </span>
-              {c.tag && (
-                <span
-                  className="text-[10px] px-2 py-px rounded flex-shrink-0"
+
+        {loading && (
+          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Memuat checklist...
+          </p>
+        )}
+
+        {error && (
+          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Gagal memuat checklist. ({error})
+          </p>
+        )}
+
+        {!loading && !error && (
+          <div className="flex flex-col gap-2.5">
+            {items.map((c) => (
+              <div key={c.id} className="flex items-center gap-3">
+                <button
+                  onClick={() => toggleDone(c)}
+                  disabled={savingId === c.id}
+                  className="text-sm flex-shrink-0"
                   style={{
-                    background: "rgba(196,136,47,0.1)",
-                    color: "var(--coffee-latte)",
-                    border: "0.5px solid rgba(196,136,47,0.35)",
+                    color: c.done
+                      ? "var(--forest-sage)"
+                      : "var(--coffee-latte)",
+                    cursor: "pointer",
+                    opacity: savingId === c.id ? 0.5 : 1,
                   }}
+                  title="Klik untuk ubah status"
                 >
-                  {c.tag}
+                  {c.done ? "✓" : "○"}
+                </button>
+                <span
+                  className="text-xs flex-1"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  {c.label}
                 </span>
-              )}
-            </div>
-          ))}
-        </div>
+                {c.tag && (
+                  <span
+                    className="text-[10px] px-2 py-px rounded flex-shrink-0"
+                    style={{
+                      background: "rgba(196,136,47,0.1)",
+                      color: "var(--coffee-latte)",
+                      border: "0.5px solid rgba(196,136,47,0.35)",
+                    }}
+                  >
+                    {c.tag}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1151,9 +2008,110 @@ const REPORT_FORMATS: {
   },
 ];
 
-function LaporanTab() {
+function LaporanTab({ yearMonth }: { yearMonth: string }) {
   const [scope, setScope] = useState<ReportScope>("all");
   const [format, setFormat] = useState<ReportFormat>("sipsn");
+  const [selectedPartnerId, setSelectedPartnerId] = useState("");
+
+  const [kpi, setKpi] = useState<EsgKpiSummary | null>(null);
+  const [materials, setMaterials] = useState<EsgMaterialBreakdown[]>([]);
+  const [partners, setPartners] = useState<EsgPartnerBreakdownBasic[]>([]);
+  const [lockInfo, setLockInfo] = useState<EsgReportPeriodLock | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { start, end } = getMonthRangeISO(yearMonth);
+        const [kpiData, materialData, partnerData, lock] = await Promise.all([
+          fetchEsgKpiSummary(start, end),
+          fetchEsgMaterialBreakdown(start, end),
+          fetchEsgPartnerBreakdownBasic(start, end),
+          fetchEsgReportPeriodLock(yearMonth),
+        ]);
+        if (!cancelled) {
+          setKpi(kpiData);
+          setMaterials(materialData);
+          setPartners(partnerData);
+          setLockInfo(lock);
+        }
+      } catch (err) {
+        reportError("EsgSection.LaporanTab.load", err);
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Gagal memuat data");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [yearMonth]);
+
+  async function handleGenerate() {
+    setGenerateError(null);
+
+    if (scope === "partner") {
+      if (!selectedPartnerId) {
+        setGenerateError("Pilih partner terlebih dahulu.");
+        return;
+      }
+      setGenerating(true);
+      await exportPartnerPdf(selectedPartnerId, yearMonth, setGenerateError);
+      setGenerating(false);
+      return;
+    }
+
+    if (!kpi) return;
+    setGenerating(true);
+    try {
+      generateEsgReportPdf(format, kpi, materials, partners, yearMonth);
+    } catch (err) {
+      reportError("EsgSection.LaporanTab.handleGenerate", err);
+      setGenerateError(
+        err instanceof Error ? err.message : "Gagal membuat PDF.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const periodLabel = new Date(`${yearMonth}-01T00:00:00`).toLocaleDateString(
+    "id-ID",
+    { month: "long", year: "numeric" },
+  );
+
+  if (loading) {
+    return (
+      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        Memuat data laporan...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        className="rounded-lg"
+        style={{
+          background: "var(--bg-card)",
+          border: "0.5px solid var(--border-subtle)",
+          padding: "16px",
+          color: "var(--text-muted)",
+        }}
+      >
+        Gagal memuat data laporan. ({error})
+      </div>
+    );
+  }
 
   return (
     <div className="flex gap-3">
@@ -1162,7 +2120,6 @@ function LaporanTab() {
         className="flex-shrink-0 flex flex-col gap-3"
         style={{ width: "220px" }}
       >
-        {/* Scope */}
         <div
           className="rounded-lg"
           style={{
@@ -1209,13 +2166,17 @@ function LaporanTab() {
                   className="text-[10px]"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  {s === "all" ? "Semua 24 partner" : "Pilih satu partner"}
+                  {s === "all"
+                    ? `Semua ${partners.length} partner`
+                    : "Pilih satu partner"}
                 </p>
               </div>
             </label>
           ))}
           {scope === "partner" && (
             <select
+              value={selectedPartnerId}
+              onChange={(e) => setSelectedPartnerId(e.target.value)}
               className="w-full rounded px-2.5 py-1.5 text-[11px] outline-none mt-1"
               style={{
                 background: "var(--bg-elevated)",
@@ -1223,17 +2184,16 @@ function LaporanTab() {
                 color: "var(--text-secondary)",
               }}
             >
-              <option>Pilih partner...</option>
-              <option>Hotel Aryaduta</option>
-              <option>Café Phoenam</option>
-              <option>Anomali Coffee</option>
-              <option>Hotel Sahid</option>
-              <option>Makassar Ramen</option>
+              <option value="">Pilih partner...</option>
+              {partners.map((p) => (
+                <option key={p.partnerId} value={p.partnerId}>
+                  {p.organization}
+                </option>
+              ))}
             </select>
           )}
         </div>
 
-        {/* Period */}
         <div
           className="rounded-lg"
           style={{
@@ -1252,21 +2212,18 @@ function LaporanTab() {
           >
             Periode
           </p>
-          <select
-            className="w-full rounded px-2.5 py-1.5 text-[11px] outline-none mb-2"
-            style={{
-              background: "var(--bg-elevated)",
-              border: "0.5px solid var(--border-subtle)",
-              color: "var(--text-primary)",
-            }}
-          >
-            <option>Mei 2026</option>
-            <option>April 2026</option>
-            <option>Q1 2026</option>
-          </select>
-          <p className="text-[10px]" style={{ color: "var(--coffee-latte)" }}>
-            🔒 Period belum dikunci admin
+          <p className="text-xs mb-2" style={{ color: "var(--text-primary)" }}>
+            {periodLabel}
           </p>
+          {lockInfo ? (
+            <p className="text-[10px]" style={{ color: "var(--forest-sage)" }}>
+              ✓ Period dikunci admin
+            </p>
+          ) : (
+            <p className="text-[10px]" style={{ color: "var(--coffee-latte)" }}>
+              🔒 Period belum dikunci admin
+            </p>
+          )}
         </div>
       </div>
 
@@ -1279,82 +2236,110 @@ function LaporanTab() {
           padding: "16px",
         }}
       >
-        <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
-          Pilih format laporan pendukung:
-        </p>
-
-        <div className="flex flex-col gap-2 mb-4">
-          {REPORT_FORMATS.map((f) => (
-            <label
-              key={f.id}
-              className="flex gap-2.5 items-start p-3 rounded-md cursor-pointer transition-all"
-              style={{
-                border: `0.5px solid ${format === f.id ? "var(--forest-sage)" : "var(--border-subtle)"}`,
-                background:
-                  format === f.id ? "rgba(45,90,46,0.07)" : "transparent",
-              }}
+        {scope === "all" && (
+          <>
+            <p
+              className="text-[11px] mb-3"
+              style={{ color: "var(--text-muted)" }}
             >
-              <input
-                type="radio"
-                name="format"
-                checked={format === f.id}
-                onChange={() => setFormat(f.id)}
-                style={{ accentColor: "var(--forest-sage)", marginTop: "2px" }}
-              />
-              <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span
-                    className="text-xs font-medium"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {f.label}
-                  </span>
-                  {f.recommended && (
-                    <span
-                      className="text-[9px] px-1.5 py-px rounded"
-                      style={{
-                        background: "rgba(45,90,46,0.12)",
-                        color: "var(--forest-sage)",
-                        border: "0.5px solid rgba(45,90,46,0.3)",
-                      }}
-                    >
-                      Direkomendasikan
-                    </span>
-                  )}
-                </div>
-                <p
-                  className="text-[11px]"
-                  style={{ color: "var(--text-muted)" }}
+              Pilih format laporan pendukung:
+            </p>
+            <div className="flex flex-col gap-2 mb-4">
+              {REPORT_FORMATS.map((f) => (
+                <label
+                  key={f.id}
+                  className="flex gap-2.5 items-start p-3 rounded-md cursor-pointer transition-all"
+                  style={{
+                    border: `0.5px solid ${format === f.id ? "var(--forest-sage)" : "var(--border-subtle)"}`,
+                    background:
+                      format === f.id ? "rgba(45,90,46,0.07)" : "transparent",
+                  }}
                 >
-                  {f.desc}
-                  {f.warn && (
-                    <span style={{ color: "var(--coffee-latte)" }}>
-                      {" "}
-                      {f.warn}
-                    </span>
-                  )}
-                </p>
-              </div>
-            </label>
-          ))}
-        </div>
+                  <input
+                    type="radio"
+                    name="format"
+                    checked={format === f.id}
+                    onChange={() => setFormat(f.id)}
+                    style={{
+                      accentColor: "var(--forest-sage)",
+                      marginTop: "2px",
+                    }}
+                  />
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {f.label}
+                      </span>
+                      {f.recommended && (
+                        <span
+                          className="text-[9px] px-1.5 py-px rounded"
+                          style={{
+                            background: "rgba(45,90,46,0.12)",
+                            color: "var(--forest-sage)",
+                            border: "0.5px solid rgba(45,90,46,0.3)",
+                          }}
+                        >
+                          Direkomendasikan
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className="text-[11px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {f.desc}
+                      {f.warn && (
+                        <span style={{ color: "var(--coffee-latte)" }}>
+                          {" "}
+                          {f.warn}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
 
-        {/* Generate button */}
+        {scope === "partner" && (
+          <p
+            className="text-[11px] mb-4"
+            style={{ color: "var(--text-muted)" }}
+          >
+            Laporan per partner berisi info kontak, kategori, dan riwayat pickup
+            periode ini.
+          </p>
+        )}
+
+        {generateError && (
+          <p className="text-[11px] mb-3" style={{ color: "#f87171" }}>
+            {generateError}
+          </p>
+        )}
+
         <button
+          onClick={handleGenerate}
+          disabled={generating}
           className="w-full py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all"
           style={{
             background: "var(--forest-sage)",
             color: "white",
             border: "none",
+            opacity: generating ? 0.6 : 1,
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.88")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
         >
-          <i className="fas fa-file-pdf" />
-          Generate PDF Laporan Pendukung — Mei 2026
+          <i
+            className={`fas ${generating ? "fa-circle-notch fa-spin" : "fa-file-pdf"}`}
+          />
+          {generating
+            ? "Membuat PDF..."
+            : `Generate PDF Laporan — ${periodLabel}`}
         </button>
 
-        {/* Disclaimer */}
         <div
           className="mt-3 rounded-md px-3 py-2.5 text-center text-[10px]"
           style={{
@@ -1382,30 +2367,85 @@ import React from "react";
 
 export default function EsgSection() {
   const [activeTab, setActiveTab] = useState<SubTab>("ringkasan");
+  const [summary, setSummary] = useState<EsgKpiSummary | null>(null);
+  const [materials, setMaterials] = useState<EsgMaterialBreakdown[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const now = new Date();
+  const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const { start: periodStart, end: periodEnd } = getMonthRangeISO(yearMonth);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [kpiData, materialData] = await Promise.all([
+          fetchEsgKpiSummary(periodStart, periodEnd),
+          fetchEsgMaterialBreakdown(periodStart, periodEnd),
+        ]);
+        if (!cancelled) {
+          setSummary(kpiData);
+          setMaterials(materialData);
+        }
+      } catch (err) {
+        reportError("EsgSection.loadKpiSummary", err);
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Gagal memuat data");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // sengaja [] — cukup jalan sekali saat tab admin dibuka, periodStart/periodEnd
+    // stabil selama sesi ini (bulan tidak berganti di tengah sesi kerja admin)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div>
-      {/* Section header */}
       <div className="dash-section-header">
         <h2 className="dash-section-title">ESG Report</h2>
         <p className="dash-section-sub">
-          6.75 ton diproses · 4.82 ton didaur ulang · 6.43 ton CO₂e dihindari —
-          Mei 2026
+          {loading
+            ? "Memuat data..."
+            : summary
+              ? `${(summary.totalPickupKg / 1000).toFixed(2)} ton diproses · ${(summary.totalDryKg / 1000).toFixed(2)} ton didaur ulang · ${(summary.totalCo2eKg / 1000).toFixed(2)} ton CO₂e dihindari — bulan ini`
+              : "Data tidak tersedia"}
         </p>
       </div>
-
-      {/* KPI */}
-      <KpiRow />
-
-      {/* Sub-tab navigation */}
+      <KpiRow summary={summary} loading={loading} error={error} />
       <SubTabBar active={activeTab} onChange={setActiveTab} />
-
-      {/* Tab content */}
-      {activeTab === "ringkasan" && <RingkasanTab />}
+      {activeTab === "ringkasan" && (
+        <RingkasanTab
+          kpi={summary}
+          materials={materials}
+          loading={loading}
+          error={error}
+          yearMonth={yearMonth}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+        />
+      )}
       {activeTab === "partner" && <PartnerTab />}
-      {activeTab === "indikator" && <IndikatorTab />}
-      {activeTab === "governance" && <GovernanceTab />}
-      {activeTab === "laporan" && <LaporanTab />}
+      {activeTab === "indikator" && (
+        <IndikatorTab
+          kpi={summary}
+          materials={materials}
+          loading={loading}
+          error={error}
+        />
+      )}
+      {activeTab === "governance" && <GovernanceTab kpi={summary} />}
+      {activeTab === "laporan" && <LaporanTab yearMonth={yearMonth} />}{" "}
     </div>
   );
 }

@@ -26,7 +26,12 @@ import {
   formatDisplayDate,
   toLocalTimeStr,
 } from "../utils/date";
-import { pickCollectorForPartner } from "./scheduling";
+import {
+  pickCollectorForPartner,
+  computeDueDate,
+  computeUrgentQueue,
+} from "./scheduling";
+import { estimateKgFromVolumeLimbah } from "../utils/volume-limbah";
 const supabase = createClient();
 
 // FASE 4 — jam default untuk stop yang di-generate otomatis (approve partner
@@ -34,6 +39,12 @@ const supabase = createClient();
 // di schema saat ini — kalau nanti ditambahkan, ganti baris ini jadi baca
 // dari situ.
 const DEFAULT_AUTO_SCHEDULED_TIME = "08:00";
+
+// Fix — estimasi kg untuk stop auto-generate SEKARANG memakai fungsi shared
+// (satu-satunya sumber kebenaran, juga dipakai OperationalSection.tsx),
+// bukan lagi formula midpoint × interval yang sempat dipakai sementara di
+// sini dan berbeda dari konvensi yang sudah lama dipakai admin (max, tanpa
+// interval). Lihat utils/volume-limbah.ts untuk detail & alasan konvensinya.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -143,8 +154,10 @@ export type StopUpdatePayload = {
  * Ini adalah JEMBATAN UTAMA antara PartnerSection dan OperationalSection:
  * Partner yang sudah di-approve di PartnerSection → muncul di sini.
  */
-export async function fetchActivePartners(): Promise<ActivePartner[]> {
-  const { data, error } = await supabase
+export async function fetchActivePartners(
+  client: SupabaseClient = supabase,
+): Promise<ActivePartner[]> {
+  const { data, error } = await client
     .from("partner_applications")
     .select(
       "id, organization, jenis_usaha, alamat_detail, kecamatan_nama, kota_nama, volume_limbah, pic_name, phone, pickup_interval_days, last_pickup_date, active_from",
@@ -558,9 +571,14 @@ export const SYSTEM_SKIP_REASON = "Otomatis — melewati batas waktu penjemputan
  * done maupun skip manual) sampai hari penjemputan berakhir. Ini konteks skip
  * kedua yang berbeda dari skip manual oleh collector.
  *
- * KAPAN DIPANGGIL: sekali setiap AdminDashboard.tsx mount (lihat useEffect
- * di AdminDashboard), SEBELUM fetchBadges(). Ini pendekatan "reconciliation
- * saat dashboard dibuka" (Opsi A) — tidak butuh cron/edge function terpisah.
+ * KAPAN DIPANGGIL:
+ *   1. Setiap AdminDashboard.tsx mount (client, pakai session admin) —
+ *      reconciliation "on-demand" saat ada admin yang buka dashboard.
+ *   2. Fix — sekarang JUGA dipanggil dari runDailyScheduleSync() lewat
+ *      cron server-side (lihat bagian bawah file ini), supaya reconciliation
+ *      tetap jalan tiap hari meski TIDAK ADA admin yang login berhari-hari.
+ *      Dua pemanggil ini idempotent dan aman jalan bersamaan — keduanya
+ *      cuma menyentuh stop yang benar-benar masih "pending" & basi.
  *
  * PENTING: fungsi ini SENGAJA tidak menyentuh last_pickup_date — stop yang
  * di-skip (implisit maupun manual) TIDAK dianggap sebagai pickup selesai,
@@ -569,14 +587,16 @@ export const SYSTEM_SKIP_REASON = "Otomatis — melewati batas waktu penjemputan
  *
  * @returns jumlah stop yang berhasil direkonsiliasi (untuk logging/toast opsional)
  */
-export async function reconcileStaleStops(): Promise<{
+export async function reconcileStaleStops(
+  client: SupabaseClient = supabase,
+): Promise<{
   reconciledCount: number;
 }> {
   const today = todayWITA();
 
   // Step 1: cari semua route SEBELUM hari ini — kandidat stop yang mungkin
   // masih tertinggal berstatus "pending".
-  const { data: staleRoutes, error: routeErr } = await supabase
+  const { data: staleRoutes, error: routeErr } = await client
     .from("collection_routes")
     .select("id")
     .lt("route_date", today);
@@ -591,7 +611,7 @@ export async function reconcileStaleStops(): Promise<{
   // Step 2: update SEMUA stop "pending" di rute-rute tersebut jadi "skipped".
   // .select("id") di akhir dipakai supaya kita tahu berapa baris benar-benar
   // ter-update — Supabase tidak mengembalikan affected-row-count secara default.
-  const { data: updated, error: updateErr } = await supabase
+  const { data: updated, error: updateErr } = await client
     .from("collection_stops")
     .update({
       status: "skipped",
@@ -662,6 +682,7 @@ async function generateStopForPartner(
   kecamatanNama: string | null,
   targetDate: string,
   lastCollectorId: string | null,
+  volumeLimbah: string | null,
   client: SupabaseClient = supabase,
 ): Promise<void> {
   const collectors = await fetchAllCollectors(client);
@@ -688,7 +709,10 @@ async function generateStopForPartner(
           partner_id: partnerId,
           stop_order: 1,
           scheduled_time: DEFAULT_AUTO_SCHEDULED_TIME,
-          estimated_kg: null,
+          // Fix — dulu selalu null, lalu sempat pakai formula midpoint×interval.
+          // Sekarang konsisten dengan konvensi admin: angka maksimum dari
+          // rentang volume_limbah, tanpa dikali interval.
+          estimated_kg: estimateKgFromVolumeLimbah(volumeLimbah),
         },
       ],
     },
@@ -719,7 +743,7 @@ async function generateStopForPartner(
 export async function generateInitialStop(partnerId: string): Promise<void> {
   const { data: partner, error: pErr } = await supabase
     .from("partner_applications")
-    .select("id, kecamatan_nama, active_from")
+    .select("id, kecamatan_nama, active_from, volume_limbah")
     .eq("id", partnerId)
     .single();
 
@@ -740,6 +764,7 @@ export async function generateInitialStop(partnerId: string): Promise<void> {
     partner.kecamatan_nama,
     targetDate,
     null,
+    partner.volume_limbah,
   );
 }
 
@@ -776,7 +801,7 @@ export async function generateNextStop(
 
   const { data: partner, error: pErr } = await client
     .from("partner_applications")
-    .select("id, kecamatan_nama, pickup_interval_days, status")
+    .select("id, kecamatan_nama, pickup_interval_days, status, volume_limbah")
     .eq("id", partnerId)
     .single();
 
@@ -794,8 +819,107 @@ export async function generateNextStop(
     partner.kecamatan_nama,
     targetDate,
     lastCollectorId,
+    partner.volume_limbah,
     client,
   );
+}
+
+/**
+ * FIX — jalankan sinkronisasi jadwal HARIAN, independen dari admin login.
+ *
+ * LATAR BELAKANG MASALAH:
+ *   Sebelum ini, ada 2 celah yang membuat siklus auto-generate rapuh:
+ *     1. handleStopCompletedInBackground() dipanggil fire-and-forget dari
+ *        BROWSER collector setelah submit — kalau request itu gagal diam-diam
+ *        (koneksi putus, tab ditutup terlalu cepat), siklus partner itu
+ *        berhenti tanpa jejak, tidak ada retry.
+ *     2. reconcileStaleStops() cuma dipanggil client-side saat AdminDashboard
+ *        di-mount — kalau tidak ada admin yang login berhari-hari, stop basi
+ *        tidak pernah direkonsiliasi, dan guard anti-duplikat mengira partner
+ *        itu "masih ada jadwal aktif" sehingga TIDAK PERNAH dapat stop baru.
+ *
+ * FIX: satu fungsi yang dipanggil dari cron server-side (lihat
+ * /api/cron/daily-schedule-sync), berjalan setiap hari TANPA butuh siapa pun
+ * login. Jadi self-healing untuk kedua celah di atas sekaligus — kalau
+ * fire-and-forget di poin 1 gagal, cron besok paginya akan menemukan partner
+ * itu "belum ada stop" lewat computeUrgentQueue() dan generate ulang.
+ *
+ * URUTAN LANGKAH (penting):
+ *   1. Reconcile dulu — stop "pending" yang route_date-nya sudah lewat
+ *      ditandai "skipped", supaya guard anti-duplikat di langkah berikut
+ *      membaca status yang benar-benar terkini.
+ *   2. Hitung urgent queue — SATU-SATUNYA sumber kebenaran (computeUrgentQueue,
+ *      sama persis dipakai Urgent Queue panel & badge sidebar admin).
+ *   3. Auto-generate HANYA untuk reason "overdue_unscheduled" (due date lewat,
+ *      belum ada stop terjadwal sama sekali). Partner dengan reason "skipped"
+ *      SENGAJA dilewati — sama seperti generateNextStop(), skip butuh
+ *      keputusan admin manual, bukan auto-generate ulang begitu saja.
+ *
+ * Sekuensial (bukan Promise.all) per partner — konsisten dengan pola yang
+ * sudah ada di file ini (query load-per-collector yang dipakai
+ * pickCollectorForPartner() tidak boleh balapan antar partner dalam 1 run).
+ *
+ * lastCollectorId sengaja selalu null di sini (sama seperti generateInitialStop)
+ * — cron tidak melacak "collector siklus sebelumnya" untuk kasus ini, jadi
+ * pickCollectorForPartner() fallback ke prioritas 2 (area match) / 3 (load
+ * ringan). Ini bukan regresi — perilaku identik dengan generateInitialStop.
+ *
+ * @param client  WAJIB service-role client saat dipanggil dari cron (tidak
+ *                ada sesi admin di context server) — lihat
+ *                lib/supabase/service-role.ts. Default ke module singleton
+ *                cuma untuk kemudahan testing lokal.
+ */
+export async function runDailyScheduleSync(
+  client: SupabaseClient = supabase,
+): Promise<{
+  reconciledCount: number;
+  generatedCount: number;
+  skippedForReview: number;
+  errors: { partnerId: string; organization: string; message: string }[];
+}> {
+  const { reconciledCount } = await reconcileStaleStops(client);
+
+  const partners = await fetchActivePartners(client);
+  const latestStops = await fetchLatestStopsForPartners(
+    partners.map((p) => p.id),
+    client,
+  );
+  const urgentQueue = computeUrgentQueue(partners, latestStops);
+
+  const needsAutoStop = urgentQueue.filter(
+    (item) => item.urgent.reason === "overdue_unscheduled",
+  );
+  const skippedForReview = urgentQueue.filter(
+    (item) => item.urgent.reason === "skipped",
+  ).length;
+
+  let generatedCount = 0;
+  const errors: { partnerId: string; organization: string; message: string }[] =
+    [];
+
+  for (const { partner } of needsAutoStop) {
+    try {
+      const targetDate = computeDueDate(partner) ?? todayWITA();
+      await generateStopForPartner(
+        partner.id,
+        partner.kecamatan_nama,
+        targetDate,
+        null,
+        partner.volume_limbah,
+        client,
+      );
+      generatedCount++;
+    } catch (err: any) {
+      reportError("supabase-collector.runDailyScheduleSync", err, "warn");
+      errors.push({
+        partnerId: partner.id,
+        organization: partner.organization,
+        message: err?.message ?? "Unknown error",
+      });
+    }
+  }
+
+  return { reconciledCount, generatedCount, skippedForReview, errors };
 }
 
 export async function verifyStop(
