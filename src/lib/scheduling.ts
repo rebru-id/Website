@@ -61,7 +61,11 @@ export type CollectorSuggestion = {
 // Pakai Pick<> supaya pemanggil tidak wajib punya objek ActivePartner utuh.
 type PartnerScheduleInfo = Pick<
   ActivePartner,
-  "pickup_interval_days" | "last_pickup_date" | "active_from"
+  | "pickup_interval_days"
+  | "last_pickup_date"
+  | "active_from"
+  | "schedule_type"
+  | "pickup_days"
 >;
 
 type PartnerAreaInfo = Pick<ActivePartner, "kecamatan_nama">;
@@ -71,27 +75,143 @@ type PartnerAreaInfo = Pick<ActivePartner, "kecamatan_nama">;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * FIX — tentukan apakah partner ini SEHARUSNYA pernah due sama sekali.
+ *
+ * BUG YANG DIPERBAIKI: sebelum fungsi ini ada, computeDueDate() untuk
+ * partner dengan pickup_interval_days = 0 (kontributor — "antar sendiri",
+ * tidak perlu dijemput sama sekali) menghasilkan addDays(base, 0) = base
+ * itu sendiri. Begitu satu hari berlalu, tanggal itu otomatis jadi masa
+ * lalu → isPartnerUrgent() SELALU bilang overdue_unscheduled, SELAMANYA.
+ * Kalau partner seperti ini berstatus "active", cron harian
+ * (runDailyScheduleSync) akan generate stop pickup tiap hari untuk partner
+ * yang seharusnya tidak pernah punya rute — ditemukan dari data produksi
+ * asli (partner kontributor dengan pickup_interval_days: 0).
+ *
+ * Data nyata dikonfirmasi dari export partner_applications: kontributor
+ * SELALU tersimpan dengan pickup_interval_days = 0 (lihat defaultInterval
+ * di PartnerSection.tsx) — jadi 0 di mode "interval" adalah sentinel resmi
+ * untuk "tidak ada jadwal auto-generate", bukan sekadar edge case langka.
+ */
+/**
+ * Fix — parameter dipersempit jadi HANYA field yang benar-benar dipakai
+ * fungsi ini (bukan PartnerScheduleInfo penuh). Sebelumnya minta
+ * last_pickup_date & active_from juga (padahal tidak dipakai sama sekali
+ * di badan fungsi) — bikin generateNextStop() gagal compile karena select
+ * query di sana sengaja tidak mengambil dua kolom itu (tidak perlu untuk
+ * generate stop berikutnya). Sekarang tipe param match persis kebutuhan
+ * fungsi, objek partial dari mana pun otomatis diterima secara struktural.
+ */
+export function hasActiveSchedule(
+  partner: Pick<
+    PartnerScheduleInfo,
+    "schedule_type" | "pickup_interval_days" | "pickup_days"
+  >,
+): boolean {
+  if (partner.schedule_type === "weekly_days") {
+    return !!partner.pickup_days && partner.pickup_days.length > 0;
+  }
+  // Mode "interval" (default) — 0 atau tidak terisi berarti tidak ada jadwal.
+  return (partner.pickup_interval_days ?? 0) > 0;
+}
+
+/**
+ * Cari tanggal kalender berikutnya (SETELAH fromDateStr, tidak termasuk
+ * fromDateStr sendiri) yang hari-dalam-minggunya (getUTCDay(): 0=Minggu..
+ * 6=Sabtu) ada di daftar `days`. Dipakai untuk mode jadwal "weekly_days".
+ *
+ * SELALU maju minimal 1 hari — konsisten dengan mode "interval" yang juga
+ * selalu addDays(base, N) dengan N >= 1 (lihat hasActiveSchedule di atas,
+ * N=0 sudah difilter jadi "tidak ada jadwal" sebelum sampai sini).
+ */
+function nextMatchingWeekday(fromDateStr: string, days: number[]): string {
+  for (let i = 1; i <= 7; i++) {
+    const candidate = addDays(fromDateStr, i);
+    if (days.includes(parseLocalDate(candidate).getUTCDay())) return candidate;
+  }
+  // Tidak seharusnya pernah sampai sini kalau days non-empty (7 hari cukup
+  // untuk menemukan kecocokan apa pun) — fallback aman, bukan dead code trap.
+  return addDays(fromDateStr, 7);
+}
+
+/**
+ * Hitung SATU tanggal berikutnya dari sebuah tanggal basis, sesuai mode
+ * jadwal partner. Diekspor terpisah (bukan cuma logic inline di
+ * computeDueDate) supaya generateNextStop() di supabase-collector.ts bisa
+ * langsung pakai dengan basis completionDate eksplisit, tanpa perlu
+ * "berpura-pura" last_pickup_date sudah ter-update di objek partner.
+ *
+ *   - "interval" (default) → addDays(base, pickup_interval_days), SAMA
+ *     PERSIS formula lama, tidak berubah untuk partner yang sudah pakai
+ *     mode ini.
+ *   - "weekly_days"          → nextMatchingWeekday(base, pickup_days).
+ */
+export function computeNextScheduledDate(
+  baseDateStr: string,
+  partner: Pick<
+    PartnerScheduleInfo,
+    "schedule_type" | "pickup_days" | "pickup_interval_days"
+  >,
+): string {
+  if (partner.schedule_type === "weekly_days" && partner.pickup_days?.length) {
+    return nextMatchingWeekday(baseDateStr, partner.pickup_days);
+  }
+  return addDays(baseDateStr, partner.pickup_interval_days);
+}
+
+/**
  * Hitung tanggal jatuh tempo pickup berikutnya untuk satu partner.
  *
- * Basis perhitungan (urutan prioritas):
- *   1. last_pickup_date + interval   → partner sudah pernah dijemput
- *   2. active_from + interval        → partner belum pernah dijemput,
- *                                       pakai tanggal disetujui sebagai basis
- *   3. null                          → data tidak cukup untuk dihitung
- *      (seharusnya tidak pernah terjadi untuk partner status "active",
- *       karena approvePartner() selalu mengisi active_from — ini jaring
- *       pengaman kalau ada data lama/rusak)
+ * FIX — sekarang cek hasActiveSchedule() dulu: partner tanpa jadwal aktif
+ * (kontributor/interval=0, atau weekly_days tanpa hari dipilih) TIDAK PERNAH
+ * dianggap due — return null, bukan tanggal yang diam di tempat.
  *
- * @returns tanggal "YYYY-MM-DD", atau null kalau data tidak cukup.
+ * Basis perhitungan (urutan prioritas):
+ *   1. last_pickup_date + jadwal   → partner sudah pernah dijemput
+ *   2. active_from + jadwal        → partner belum pernah dijemput,
+ *                                     pakai tanggal disetujui sebagai basis
+ *   3. null                        → data tidak cukup untuk dihitung
+ *
+ * @returns tanggal "YYYY-MM-DD", atau null kalau tidak ada jadwal aktif /
+ *          data tidak cukup untuk dihitung.
  */
 export function computeDueDate(partner: PartnerScheduleInfo): string | null {
+  if (!hasActiveSchedule(partner)) return null;
+
   const baseDate = partner.last_pickup_date ?? partner.active_from ?? null;
   if (!baseDate) return null;
 
   // baseDate bisa berupa timestamp lengkap (active_from) atau tanggal saja
   // (last_pickup_date) — slice(0, 10) menormalkan keduanya jadi "YYYY-MM-DD".
-  const baseDateOnly = baseDate.slice(0, 10);
-  return addDays(baseDateOnly, partner.pickup_interval_days);
+  return computeNextScheduledDate(baseDate.slice(0, 10), partner);
+}
+
+/**
+ * FIX — khusus dipakai generateInitialStop() (stop PERTAMA untuk partner
+ * yang baru saja disetujui). Beda dari computeDueDate() di atas:
+ *   - Mode "interval": tanggal stop pertama = active_from APA ADANYA
+ *     (TIDAK ditambah interval) — SAMA PERSIS dengan perilaku lama
+ *     generateInitialStop, tidak berubah.
+ *   - Mode "weekly_days": cari hari cocok terdekat MULAI DARI active_from,
+ *     termasuk active_from itu sendiri kalau kebetulan cocok (inclusive) —
+ *     beda dari nextMatchingWeekday di computeDueDate yang exclusive,
+ *     karena di sini belum pernah ada pickup sebelumnya untuk "dilewati".
+ *
+ * @returns tanggal "YYYY-MM-DD", atau null kalau tidak ada jadwal aktif.
+ */
+export function computeInitialDueDate(
+  partner: PartnerScheduleInfo & { active_from: string | null },
+): string | null {
+  if (!hasActiveSchedule(partner)) return null;
+
+  const base = (partner.active_from ?? todayWITA()).slice(0, 10);
+
+  if (partner.schedule_type === "weekly_days" && partner.pickup_days?.length) {
+    const baseDay = parseLocalDate(base).getUTCDay();
+    if (partner.pickup_days.includes(baseDay)) return base;
+    return nextMatchingWeekday(base, partner.pickup_days);
+  }
+
+  return base;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

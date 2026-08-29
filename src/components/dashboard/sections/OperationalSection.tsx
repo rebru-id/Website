@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback } from "react";
-import { cn, estimateKgFromVolumeLimbah } from "@/utils";
+import { cn } from "@/utils";
 import {
   todayWITA,
   getMondayWITA,
@@ -46,7 +46,12 @@ import {
   type LatestStopInfo,
 } from "@/lib/supabase-collector";
 
-import { computeUrgentQueue } from "@/lib/scheduling";
+import {
+  computeUrgentQueue,
+  computeDueDate,
+  hasActiveSchedule,
+} from "@/lib/scheduling";
+import { estimateKgFromVolumeLimbah } from "@/utils";
 import { reportError } from "@/lib/report-error";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,17 +333,10 @@ function SuggestScheduleModal({
     return `${fmt(s)} – ${fmt(e)} ${e.getFullYear()}`;
   })();
 
-  // Hitung due date berdasarkan last_pickup_date + interval
-  function calcDueDate(p: ActivePartner): string {
-    const base = p.last_pickup_date
-      ? new Date(p.last_pickup_date + "T00:00:00")
-      : new Date(weekStart + "T00:00:00"); // belum pernah → segera
-    base.setDate(base.getDate() + (p.pickup_interval_days ?? 3));
-    const yy = base.getFullYear();
-    const mm = String(base.getMonth() + 1).padStart(2, "0");
-    const dd = String(base.getDate()).padStart(2, "0");
-    return `${yy}-${mm}-${dd}`;
-  }
+  // Fix — calcDueDate lokal (pakai `new Date(str + "T00:00:00")`, timezone-
+  // unsafe seperti bug yang sudah pernah diperbaiki di utils/date.ts) DIHAPUS.
+  // Sekarang pakai computeDueDate() dari scheduling.ts — satu-satunya sumber
+  // kebenaran, sudah timezone-safe DAN otomatis dukung mode weekly_days.
 
   function formatDueDateLabel(dateStr: string): string {
     const d = new Date(dateStr + "T00:00:00");
@@ -417,9 +415,14 @@ function SuggestScheduleModal({
       .then((partners) => {
         const today = todayWITA();
         const filtered = partners
-          .filter((p) => p.pickup_interval_days > 0) // skip kontributor (interval = 0)
+          // Fix — ganti `p.pickup_interval_days > 0` (cuma benar untuk mode
+          // interval) dengan hasActiveSchedule() yang juga benar untuk mode
+          // weekly_days (partner mode itu punya pickup_interval_days = 0
+          // secara sah, jadi filter lama akan salah MENGECUALIKAN mereka).
+          .filter((p) => hasActiveSchedule(p))
           .map((p) => {
-            const dueDate = calcDueDate(p);
+            // Aman non-null — sudah difilter hasActiveSchedule() di atas.
+            const dueDate = computeDueDate(p)!;
             const overdue = calcOverdueDays(dueDate);
             return { p, dueDate, overdue };
           })
@@ -440,7 +443,10 @@ function SuggestScheduleModal({
               suggestReason: suggestion?.reason ?? null,
               assignedCollectorId: "",
               assignedDate: overdue >= 0 ? today : dueDate,
-              assignedTime: "08:00",
+              // Fix — dulu selalu "08:00". Sekarang prefill dari jam yang
+              // admin tentukan saat approve partner (fallback "08:00" kalau
+              // belum pernah diset), admin tetap bisa edit sebelum konfirmasi.
+              assignedTime: p.preferred_pickup_time ?? "08:00",
               estimatedKg:
                 estimateKgFromVolumeLimbah(p.volume_limbah)?.toString() ?? "",
               confirmed: false,
@@ -973,6 +979,21 @@ function ScheduleTab({
     if (showModal) return;
     refreshScheduleData();
   }, [showModal, refreshScheduleData]);
+
+  // Fix — dulu modal ini SATU-SATUNYA jalur yang tidak auto-isi apa pun
+  // saat partner dipilih (cuma hint teks pasif "Estimasi dari profil: ...").
+  // Sekarang prefill jam & estimasi kg dari data partner, konsisten dengan
+  // 2 jalur lain (auto-generate & bulk-suggest) — admin tetap bisa edit
+  // manual sebelum submit, ini cuma default awal.
+  useEffect(() => {
+    if (!selectedPartner) return;
+    const p = activePartners.find((ap) => ap.id === selectedPartner);
+    if (!p) return;
+    setScheduledTime(p.preferred_pickup_time ?? "08:00");
+    setEstimatedKg(
+      estimateKgFromVolumeLimbah(p.volume_limbah)?.toString() ?? "",
+    );
+  }, [selectedPartner, activePartners]);
 
   async function handleAddStop() {
     if (!selectedPartner || !selectedCollector) return;

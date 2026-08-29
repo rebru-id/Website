@@ -10,6 +10,7 @@ import {
   updatePartnerStatus,
   approvePartner,
   extendPartner,
+  updatePartnerSchedule,
   type PartnerApplication,
   type ApplicationStatus,
   type PackageType,
@@ -141,6 +142,18 @@ type DrawerAction =
       activeFrom: string;
       activeUntil: string | null;
       pickupIntervalDays: number;
+      // Fix — jadwal presisi, ditentukan admin lewat sesi konfirmasi privat.
+      scheduleType: "interval" | "weekly_days";
+      pickupDays: number[]; // dipakai hanya kalau scheduleType === "weekly_days"
+      preferredPickupTime: string; // "HH:MM"
+    }
+  // Fix — edit jadwal untuk partner yang SUDAH aktif, tanpa approve ulang.
+  | {
+      type: "update_schedule";
+      pickupIntervalDays: number;
+      scheduleType: "interval" | "weekly_days";
+      pickupDays: number[];
+      preferredPickupTime: string;
     }
   | { type: "reject" }
   | { type: "deactivate" }
@@ -159,7 +172,7 @@ const FILTER_TABS: { id: FilterTab; label: string; urgent?: boolean }[] = [
 ];
 
 const ACTION_STATUS_MAP: Record<
-  Exclude<DrawerAction["type"], "approve" | "extend">,
+  Exclude<DrawerAction["type"], "approve" | "extend" | "update_schedule">,
   ApplicationStatus
 > = {
   reject: "rejected",
@@ -791,6 +804,22 @@ function PartnerDetail({
       : (partner.pickup_interval_days ?? 3);
   const [pickupInterval, setPickupInterval] = useState(defaultInterval);
 
+  // ── Mode jadwal: interval (default) vs hari tetap ────────────────────────
+  // Ditentukan ADMIN lewat sesi konfirmasi privat dengan partner — partner
+  // TIDAK pernah input ini sendiri saat daftar (lihat ContactFormSection.tsx,
+  // tidak ada field ini di sana sama sekali, memang sengaja).
+  const [scheduleType, setScheduleType] = useState<"interval" | "weekly_days">(
+    partner.schedule_type ?? "interval",
+  );
+  const [pickupDays, setPickupDays] = useState<number[]>(
+    partner.pickup_days ?? [],
+  );
+  // ── Jam penjemputan presisi ───────────────────────────────────────────────
+  // Sama seperti mode jadwal — murni ditentukan admin, bukan input partner.
+  const [preferredPickupTime, setPreferredPickupTime] = useState(
+    partner.preferred_pickup_time ?? "08:00",
+  );
+
   const isDecidable =
     partner.status === "pending" || partner.status === "review";
   const isActive = partner.status === "active";
@@ -949,68 +978,190 @@ function PartnerDetail({
               <Divider />
               <SLabel>Frekuensi Penjemputan</SLabel>
 
-              {/* Preset buttons */}
+              {/* Fix — toggle mode jadwal. Interval (default, perilaku lama
+                  tidak berubah) vs Hari Tetap (baru). Keduanya hidup
+                  berdampingan — admin pilih salah satu per partner. */}
               <div className="flex gap-2 mb-3">
-                {[2, 3, 7].map((d) => (
+                {[
+                  { value: "interval" as const, label: "Interval Hari" },
+                  { value: "weekly_days" as const, label: "Hari Tetap" },
+                ].map((mode) => (
                   <button
-                    key={d}
-                    onClick={() => setPickupInterval(d)}
+                    key={mode.value}
+                    onClick={() => setScheduleType(mode.value)}
                     className="flex-1 py-1.5 rounded text-[11px] transition-all"
                     style={{
                       background:
-                        pickupInterval === d
-                          ? "var(--coffee-latte)"
+                        scheduleType === mode.value
+                          ? "var(--forest-sage)"
                           : "var(--bg-elevated)",
                       color:
-                        pickupInterval === d
+                        scheduleType === mode.value
                           ? "var(--bg-primary)"
                           : "var(--text-secondary)",
                       border: `0.5px solid ${
-                        pickupInterval === d
-                          ? "var(--coffee-latte)"
+                        scheduleType === mode.value
+                          ? "var(--forest-sage)"
                           : "var(--border-subtle)"
                       }`,
                     }}
                   >
-                    {d === 7 ? "1× seminggu" : `${d} hari`}
+                    {mode.label}
                   </button>
                 ))}
               </div>
 
-              {/* Custom input */}
+              {scheduleType === "weekly_days" ? (
+                <>
+                  {/* Fix — mode Hari Tetap: pilih 1+ hari kalender tiap minggu.
+                     Checkbox pill 7 hari, urutan Senin-Minggu (lebih natural
+                     untuk konteks kerja dibanding Minggu-Sabtu). Value yang
+                     disimpan tetap konvensi getUTCDay() (0=Minggu..6=Sabtu),
+                     dipakai konsisten di seluruh date.ts/scheduling.ts. */}
+                  <div className="flex gap-1.5 mb-3 flex-wrap">
+                    {[
+                      { value: 1, label: "Sen" },
+                      { value: 2, label: "Sel" },
+                      { value: 3, label: "Rab" },
+                      { value: 4, label: "Kam" },
+                      { value: 5, label: "Jum" },
+                      { value: 6, label: "Sab" },
+                      { value: 0, label: "Min" },
+                    ].map((day) => {
+                      const checked = pickupDays.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          onClick={() =>
+                            setPickupDays((prev) =>
+                              checked
+                                ? prev.filter((d) => d !== day.value)
+                                : [...prev, day.value].sort(),
+                            )
+                          }
+                          className="w-10 py-1.5 rounded text-[10px] transition-all"
+                          style={{
+                            background: checked
+                              ? "var(--coffee-latte)"
+                              : "var(--bg-elevated)",
+                            color: checked
+                              ? "var(--bg-primary)"
+                              : "var(--text-secondary)",
+                            border: `0.5px solid ${
+                              checked
+                                ? "var(--coffee-latte)"
+                                : "var(--border-subtle)"
+                            }`,
+                          }}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {pickupDays.length === 0 && (
+                    <p
+                      className="text-[10px] mb-3 flex items-center gap-1.5"
+                      style={{ color: "#f87171" }}
+                    >
+                      <i className="fas fa-exclamation-triangle text-[9px]" />
+                      Pilih minimal 1 hari — kalau kosong, partner ini tidak
+                      akan pernah dapat jadwal pickup otomatis.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Preset buttons */}
+                  <div className="flex gap-2 mb-3">
+                    {[2, 3, 7].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setPickupInterval(d)}
+                        className="flex-1 py-1.5 rounded text-[11px] transition-all"
+                        style={{
+                          background:
+                            pickupInterval === d
+                              ? "var(--coffee-latte)"
+                              : "var(--bg-elevated)",
+                          color:
+                            pickupInterval === d
+                              ? "var(--bg-primary)"
+                              : "var(--text-secondary)",
+                          border: `0.5px solid ${
+                            pickupInterval === d
+                              ? "var(--coffee-latte)"
+                              : "var(--border-subtle)"
+                          }`,
+                        }}
+                      >
+                        {d === 7 ? "1× seminggu" : `${d} hari`}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom input */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span
+                      className="text-[11px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Atau atur manual:
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={pickupInterval}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value);
+                        if (!isNaN(v) && v >= 1 && v <= 30)
+                          setPickupInterval(v);
+                      }}
+                      className="w-14 px-2 py-1 rounded text-center text-[12px] outline-none"
+                      style={{
+                        background: "var(--bg-elevated)",
+                        border: "0.5px solid var(--border-subtle)",
+                        color: "var(--text-primary)",
+                      }}
+                    />
+                    <span
+                      className="text-[11px]"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      hari sekali
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* Fix — jam penjemputan presisi, berlaku untuk KEDUA mode
+                  jadwal. Murni keputusan admin lewat sesi konfirmasi
+                  privat dengan partner — bukan input dari form pendaftaran. */}
               <div className="flex items-center gap-2 mb-3">
                 <span
                   className="text-[11px]"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  Atau atur manual:
+                  Jam penjemputan:
                 </span>
                 <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={pickupInterval}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value);
-                    if (!isNaN(v) && v >= 1 && v <= 30) setPickupInterval(v);
-                  }}
-                  className="w-14 px-2 py-1 rounded text-center text-[12px] outline-none"
+                  type="time"
+                  value={preferredPickupTime}
+                  onChange={(e) => setPreferredPickupTime(e.target.value)}
+                  className="px-2 py-1 rounded text-[12px] outline-none"
                   style={{
                     background: "var(--bg-elevated)",
                     border: "0.5px solid var(--border-subtle)",
                     color: "var(--text-primary)",
                   }}
                 />
-                <span
-                  className="text-[11px]"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  hari sekali
-                </span>
               </div>
 
-              {/* Preview jadwal berikutnya */}
-              {pickupInterval > 0 && (
+              {/* Preview jadwal berikutnya — hanya relevan utk mode interval,
+                  karena mode weekly_days sudah jelas dari checkbox hari. */}
+              {scheduleType === "interval" && pickupInterval > 0 && (
                 <div
                   className="rounded-md px-3 py-2"
                   style={{
@@ -1207,11 +1358,20 @@ function PartnerDetail({
                       ? null
                       : activeUntil || null,
                   pickupIntervalDays: pickupInterval,
+                  scheduleType,
+                  pickupDays,
+                  preferredPickupTime,
                 })
               }
               disabled={
                 actionLoading ||
-                (partner.package_type !== "kontributor" && !activeUntil)
+                (partner.package_type !== "kontributor" && !activeUntil) ||
+                // Fix — cegah submit ambigu: mode "Hari Tetap" tapi tidak
+                // ada satu hari pun dicentang. Sebelumnya ini lolos, partner
+                // jadi "active" tapi TIDAK PERNAH dapat stop apa pun, tanpa
+                // ada error yang kelihatan (lihat GenerateInitialStopResult
+                // di supabase-collector.ts untuk detail bug yang diperbaiki).
+                (scheduleType === "weekly_days" && pickupDays.length === 0)
               }
               className="flex-[2] py-2 rounded-md text-[11px] flex items-center justify-center gap-1.5 transition-all"
               style={{
@@ -1243,6 +1403,43 @@ function PartnerDetail({
         {/* Active */}
         {isActive && (
           <>
+            {/* Fix — sebelumnya blok "Frekuensi Penjemputan" tetap tampil
+                untuk partner aktif tapi TIDAK ADA tombol simpan yang
+                tersambung ke mana pun (persis kenapa updatePickupInterval()
+                lama jadi dead code). Sekarang ada jalur eksplisit lewat
+                updatePartnerSchedule() — perubahan berlaku efektif mulai
+                siklus berikutnya, tidak memicu generate stop baru langsung. */}
+            <button
+              onClick={() =>
+                onAction({
+                  type: "update_schedule",
+                  pickupIntervalDays: pickupInterval,
+                  scheduleType,
+                  pickupDays,
+                  preferredPickupTime,
+                })
+              }
+              disabled={
+                actionLoading ||
+                (scheduleType === "weekly_days" && pickupDays.length === 0)
+              }
+              className="flex-1 py-2 rounded-md text-[11px] flex items-center justify-center gap-1.5 transition-all"
+              style={{
+                ...btnBase,
+                background: "rgba(196,149,106,0.08)",
+                color: "var(--coffee-latte)",
+                border: "0.5px solid rgba(196,149,106,0.28)",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(196,149,106,0.16)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(196,149,106,0.08)")
+              }
+            >
+              <i className="fas fa-calendar-day text-[9px]" aria-hidden />
+              Simpan Jadwal
+            </button>
             {showRenew && (
               <a
                 href={buildMailto(partner)}
@@ -1435,13 +1632,16 @@ export default function PartnerSection() {
     setActionLoading(true);
     try {
       if (action.type === "approve") {
-        const result = await approvePartner(
-          selected.id,
-          session.name,
-          action.activeFrom,
-          action.activeUntil,
-          action.pickupIntervalDays,
-        );
+        const result = await approvePartner({
+          id: selected.id,
+          reviewedBy: session.name,
+          activeFrom: action.activeFrom,
+          activeUntil: action.activeUntil,
+          pickupIntervalDays: action.pickupIntervalDays,
+          scheduleType: action.scheduleType,
+          pickupDays: action.pickupDays,
+          preferredPickupTime: action.preferredPickupTime,
+        });
         const updated: PartnerApplication = {
           ...selected,
           status: "active",
@@ -1450,6 +1650,10 @@ export default function PartnerSection() {
           active_from: action.activeFrom,
           active_until: action.activeUntil,
           pickup_interval_days: action.pickupIntervalDays,
+          schedule_type: action.scheduleType,
+          pickup_days:
+            action.scheduleType === "weekly_days" ? action.pickupDays : null,
+          preferred_pickup_time: action.preferredPickupTime,
         };
         setPartners((prev) =>
           prev.map((p) => (p.id === selected.id ? updated : p)),
@@ -1460,9 +1664,18 @@ export default function PartnerSection() {
           ? `✓ ${selected.organization} diaktifkan hingga ${formatDateShort(action.activeUntil)}`
           : `✓ ${selected.organization} diaktifkan — tidak berbatas`;
 
-        if (result.scheduleGenerated) {
-          // FASE 4 — jadwal pertama otomatis terbuat, kabari admin sekalian
+        // Fix — sekarang menangani 3 kemungkinan secara eksplisit, bukan
+        // cuma boolean sukses/gagal. "skipped_no_schedule" BUKAN error
+        // (kontributor/weekly_days tanpa hari itu memang tidak seharusnya
+        // dapat stop) — tapi tetap harus dikabari ke admin secara jujur,
+        // bukan disamakan dengan "berhasil generate 1 stop pertama".
+        if (result.scheduleStatus === "generated") {
           show(`${activatedMsg} · jadwal pertama otomatis dibuat`, "success");
+        } else if (result.scheduleStatus === "skipped_no_schedule") {
+          show(
+            `${activatedMsg} · tidak ada jadwal pickup dibuat (mode tanpa jadwal aktif)`,
+            "success",
+          );
         } else {
           // Approve tetap berhasil (partner sudah "active" di DB), tapi
           // auto-generate gagal — admin WAJIB tahu supaya assign manual
@@ -1473,6 +1686,33 @@ export default function PartnerSection() {
             "error",
           );
         }
+      } else if (action.type === "update_schedule") {
+        // Fix — jalur baru: edit jadwal untuk partner yang SUDAH aktif,
+        // tanpa melalui alur approve ulang. Lihat updatePartnerSchedule()
+        // di supabase-partner.ts untuk alasan kenapa ini TIDAK memicu
+        // generate stop baru (baru berlaku efektif siklus berikutnya).
+        await updatePartnerSchedule(selected.id, {
+          pickupIntervalDays: action.pickupIntervalDays,
+          scheduleType: action.scheduleType,
+          pickupDays: action.pickupDays,
+          preferredPickupTime: action.preferredPickupTime,
+        });
+        const updated: PartnerApplication = {
+          ...selected,
+          pickup_interval_days: action.pickupIntervalDays,
+          schedule_type: action.scheduleType,
+          pickup_days:
+            action.scheduleType === "weekly_days" ? action.pickupDays : null,
+          preferred_pickup_time: action.preferredPickupTime,
+        };
+        setPartners((prev) =>
+          prev.map((p) => (p.id === selected.id ? updated : p)),
+        );
+        setSelected(updated);
+        show(
+          `Jadwal ${selected.organization} diperbarui — berlaku mulai siklus berikutnya`,
+          "success",
+        );
       } else if (action.type === "extend") {
         await extendPartner(selected.id, session.name, action.activeUntil);
         const updated: PartnerApplication = {
@@ -1514,6 +1754,7 @@ export default function PartnerSection() {
     } catch {
       const errorMsg: Record<DrawerAction["type"], string> = {
         approve: `Gagal mengaktifkan ${selected.organization}. Coba lagi.`,
+        update_schedule: `Gagal menyimpan jadwal ${selected.organization}. Coba lagi.`,
         reject: `Gagal menolak ${selected.organization}. Coba lagi.`,
         deactivate: `Gagal menonaktifkan ${selected.organization}. Coba lagi.`,
         reactivate: `Gagal memperbarui status. Coba lagi.`,
